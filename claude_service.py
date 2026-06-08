@@ -251,7 +251,7 @@ NO emojis unless customer uses them first.
 def get_claude_reply(conversation_history: list) -> str:
     client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
     response = client.messages.create(
-        model="claude-sonnet-4-5-20251001",
+        model="claude-haiku-4-5-20251001",
         max_tokens=500,
         system=KITPAK_SYSTEM_PROMPT,
         messages=conversation_history
