@@ -30,7 +30,7 @@ def send_whatsapp_message(phone: str, message: str) -> bool:
         print(f"[KITPAK] Method 1 response: {response.status_code} - {response.text[:200]}")
         if response.status_code == 200:
             result = response.json()
-            if result.get('result') == True:
+            if result.get('result') in [True, 'success'] or result.get('ok') == True:
                 print(f"[KITPAK] ✅ Message sent to {phone}")
                 return True
     except Exception as e:
@@ -49,7 +49,7 @@ def send_whatsapp_message(phone: str, message: str) -> bool:
         print(f"[KITPAK] Method 2 response: {response.status_code} - {response.text[:200]}")
         if response.status_code == 200:
             result = response.json()
-            if result.get('result') == True:
+            if result.get('result') in [True, 'success'] or result.get('ok') == True:
                 print(f"[KITPAK] ✅ Message sent to {phone}")
                 return True
     except Exception as e:
