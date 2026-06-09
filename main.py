@@ -1,81 +1,112 @@
-"""
-KITPAK — Proforma Invoice Generator
-Generates a text-based PI to send via WhatsApp
-"""
-from datetime import datetime, timedelta
+from flask import Flask, request, jsonify
 import os
+import json
+from dotenv import load_dotenv
+from claude_service import get_claude_reply, extract_order_details
+from wati_service import send_whatsapp_message
+from pi_service import generate_pi_text
 
-UPI_ID = os.environ.get('KITPAK_UPI_ID', '9489501487@okbizaxis')
+load_dotenv()
 
-def generate_pi_text(order: dict) -> str:
-    """
-    Generates a WhatsApp-friendly Proforma Invoice text.
-    
-    order = {
-        'customer_name': str,
-        'phone': str,
-        'address': str,
-        'pincode': str,
-        'state': str,
-        'gstin': str (optional),
-        'items': [{'desc': str, 'qty': int, 'rate': float}]
-    }
-    """
-    today = datetime.now()
-    valid_until = today + timedelta(days=7)
-    pi_number = f"KITPAK/PI/{today.strftime('%Y%m%d%H%M')}"
+app = Flask(__name__)
 
-    total = sum(item['qty'] * item['rate'] for item in order['items'])
+conversation_history = {}
 
-    lines = []
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("KITPAK — PROFORMA INVOICE")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"PI No: {pi_number}")
-    lines.append(f"Date: {today.strftime('%d %b %Y')}")
-    lines.append(f"Valid until: {valid_until.strftime('%d %b %Y')}")
-    lines.append("")
-    lines.append("FROM:")
-    lines.append("SARAVANA TRADING (KITPAK)")
-    lines.append("55C, Valayangadu Main Road")
-    lines.append("Kumar Nagar South, Tirupur - 641605")
-    lines.append("GSTIN: 33ATTPG0334P2ZD")
-    lines.append("")
-    lines.append("TO:")
-    lines.append(order['customer_name'])
-    lines.append(order['address'])
-    lines.append(f"Pincode: {order['pincode']}")
-    if order.get('state'):
-        lines.append(order['state'])
-    lines.append(f"Ph: {order['phone']}")
-    if order.get('gstin'):
-        lines.append(f"GSTIN: {order['gstin']}")
-    else:
-        lines.append("GST: Not applicable")
-    lines.append("")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("ITEMS:")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        data = request.json
+        print(f"[KITPAK] Payload: {data}")
 
-    for i, item in enumerate(order['items'], 1):
-        amount = item['qty'] * item['rate']
-        lines.append(f"{i}. {item['desc']}")
-        lines.append(f"   {item['qty']} pcs x ₹{item['rate']:.2f} = ₹{amount:.2f}")
+        if not data:
+            return jsonify({'status': 'no data'}), 200
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"Shipping: FREE")
-    lines.append(f"GST: Included")
-    lines.append(f"TOTAL: ₹{total:,.2f}")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("")
-    lines.append("PAYMENT:")
-    lines.append(f"UPI ID: {UPI_ID}")
-    lines.append(f"Amount: ₹{total:,.2f}")
-    lines.append("")
-    lines.append("Pay via GPay / PhonePe / Paytm / BHIM")
-    lines.append("After payment, please share the UTR number.")
-    lines.append("")
-    lines.append("Thank you for choosing KITPAK!")
-    lines.append("KITPAK.IN | info@kitpak.in | 83004 75706")
+        phone = (data.get('waId') or data.get('from') or '')
 
-    return "\n".join(lines)
+        message_text = ''
+        if data.get('text') and isinstance(data.get('text'), dict):
+            message_text = data['text'].get('body', '')
+        elif data.get('text') and isinstance(data.get('text'), str):
+            message_text = data['text']
+        elif data.get('body'):
+            message_text = data['body']
+
+        message_text = message_text.strip()
+
+        if not phone or not message_text:
+            return jsonify({'status': 'ignored'}), 200
+
+        msg_type = data.get('type', 'text')
+
+        # Handle image/document — treat as logo/file submission
+        if msg_type in ['image', 'document', 'video']:
+            if phone not in conversation_history:
+                conversation_history[phone] = []
+            conversation_history[phone].append({
+                'role': 'user',
+                'content': '[Customer sent a logo/design file]'
+            })
+            history = conversation_history[phone][-20:]
+            reply = get_claude_reply(history)
+            conversation_history[phone].append({'role': 'assistant', 'content': reply})
+            send_whatsapp_message(phone, reply)
+            print(f"[KITPAK] Media received from {phone}")
+            return jsonify({'status': 'ok'}), 200
+
+        if msg_type not in ['text', '']:
+            return jsonify({'status': 'ignored'}), 200
+
+        print(f"[KITPAK] Message from {phone}: {message_text}")
+
+        if phone not in conversation_history:
+            conversation_history[phone] = []
+
+        conversation_history[phone].append({
+            'role': 'user',
+            'content': message_text
+        })
+
+        history = conversation_history[phone][-20:]
+        reply = get_claude_reply(history)
+
+        conversation_history[phone].append({
+            'role': 'assistant',
+            'content': reply
+        })
+
+        send_whatsapp_message(phone, reply)
+        print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
+
+        # Check if PI should be generated
+        if 'GENERATE_PI:' in reply:
+            try:
+                order = extract_order_details(history)
+                if order:
+                    pi_text = generate_pi_text(order)
+                    send_whatsapp_message(phone, pi_text)
+                    print(f"[KITPAK] PI sent to {phone}")
+            except Exception as e:
+                print(f"[KITPAK] PI generation error: {e}")
+
+        return jsonify({'status': 'ok'}), 200
+
+    except Exception as e:
+        print(f"[KITPAK] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'KITPAK Abimanyu is live!'}), 200
+
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({'status': 'KITPAK Abimanyu is live!'}), 200
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
