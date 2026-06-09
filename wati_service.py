@@ -17,62 +17,55 @@ def send_whatsapp_message(phone: str, message: str) -> bool:
 
     headers = {
         'Authorization': f'Bearer {wati_api_token}',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json; charset=utf-8'
     }
 
-    # Send session message
-    url = f"{wati_api_url}/api/v1/sendSessionMessage/{phone}"
-    
-    # Try both payload formats
-    payload = {'messageText': message.strip()}
+    message_clean = message.strip()
+    print(f"[KITPAK] Sending message length: {len(message_clean)}")
 
+    # Method 1 — sendSessionMessage with query param
     try:
-        response = requests.post(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
-            timeout=10
-        )
-        print(f"[KITPAK] WATI response: {response.status_code} - {response.text[:300]}")
-
+        url = f"{wati_api_url}/api/v1/sendSessionMessage/{phone}?messageText={requests.utils.quote(message_clean)}"
+        response = requests.post(url, headers=headers, timeout=10)
+        print(f"[KITPAK] Method 1 response: {response.status_code} - {response.text[:200]}")
         if response.status_code == 200:
             result = response.json()
             if result.get('result') == True:
-                print(f"[KITPAK] ✅ Message delivered to {phone}")
+                print(f"[KITPAK] ✅ Message sent to {phone}")
                 return True
-            else:
-                print(f"[KITPAK] ⚠️ WATI accepted but result=false: {result.get('info')}")
-                # Try alternative endpoint
-                return _try_alternative_send(wati_api_url, wati_api_token, phone, message)
-        else:
-            print(f"[KITPAK] ❌ WATI error {response.status_code}")
-            return False
-
     except Exception as e:
-        print(f"[KITPAK] ❌ Error: {e}")
-        return False
+        print(f"[KITPAK] Method 1 error: {e}")
 
-
-def _try_alternative_send(base_url: str, token: str, phone: str, message: str) -> bool:
-    """Try alternative WATI send endpoint."""
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-    
-    # Try v2 endpoint
-    url = f"{base_url}/api/v2/sendSessionMessage/{phone}"
-    payload = {'messageText': message.strip()}
-    
+    # Method 2 — sendSessionMessage with JSON body
     try:
+        url = f"{wati_api_url}/api/v1/sendSessionMessage/{phone}"
+        payload = {"messageText": message_clean}
         response = requests.post(
             url,
-            data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
             headers=headers,
+            json=payload,
             timeout=10
         )
-        print(f"[KITPAK] Alt send response: {response.status_code} - {response.text[:200]}")
-        return response.status_code == 200
+        print(f"[KITPAK] Method 2 response: {response.status_code} - {response.text[:200]}")
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('result') == True:
+                print(f"[KITPAK] ✅ Message sent to {phone}")
+                return True
     except Exception as e:
-        print(f"[KITPAK] Alt send error: {e}")
-        return False
+        print(f"[KITPAK] Method 2 error: {e}")
+
+    # Method 3 — sendText endpoint
+    try:
+        url = f"{wati_api_url}/api/v1/sendText/{phone}"
+        payload = {"messageText": message_clean}
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        print(f"[KITPAK] Method 3 response: {response.status_code} - {response.text[:200]}")
+        if response.status_code == 200:
+            print(f"[KITPAK] ✅ Method 3 sent to {phone}")
+            return True
+    except Exception as e:
+        print(f"[KITPAK] Method 3 error: {e}")
+
+    print(f"[KITPAK] ❌ All methods failed for {phone}")
+    return False
