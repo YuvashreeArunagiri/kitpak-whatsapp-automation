@@ -35,6 +35,18 @@ def webhook():
             return jsonify({'status': 'ignored'}), 200
 
         msg_type = data.get('type', 'text')
+
+        # Handle image/document — treat as logo/file submission
+        if msg_type in ['image', 'document', 'video']:
+            media_reply = (
+                "Thank you for sharing the file! I have received it. "
+                "Let me forward this to our design team and they will prepare a mockup for you shortly. "
+                "Could I also confirm — which cover colour would you prefer? White, Pink, Purple or Black?"
+            )
+            send_whatsapp_message(phone, media_reply)
+            print(f"[KITPAK] Media received from {phone} — sent acknowledgement")
+            return jsonify({'status': 'ok'}), 200
+
         if msg_type not in ['text', '']:
             return jsonify({'status': 'ignored'}), 200
 
