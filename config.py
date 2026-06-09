@@ -28,7 +28,7 @@ BUSINESS_CONFIG = {
     "whatsapp_api"      : "",              # ⏳ New API number — update before go-live
 
     # ─── Payment (UPI ONLY) ───
-    "upi_id"            : "",              # ⏳ Share UPI ID to complete
+    "upi_id"            : "9489501487@okbizaxis",
     "upi_name"          : "SARAVANA TRADING",
     "bank_transfer"     : False,           # NOT OFFERED
     "cod"               : False,           # NOT OFFERED
@@ -148,3 +148,107 @@ NOT available on:
   ❌ Amazon Courier Covers
   ❌ Any other products
 """
+
+# ═══════════════════════════════════════════════
+# BULK PRICING — 5000+ COVERS (MOQ 5000)
+# All prices per piece in ₹ — GST & transport extra
+# ═══════════════════════════════════════════════
+
+BULK_PRICING_5000 = {
+
+    "plain_white": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "6x8":   1.50, "8x10":  1.90, "9x12":  1.90,
+            "10x12": 2.20, "10x14": 2.40, "12x14": 2.90,
+            "12x16": 3.40, "14x18": 6.00, "16x20": 7.25,
+            "20x24": 8.00
+        }
+    },
+
+    "colour_cover": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "6x8":   2.20, "8x10":  2.40, "10x12": 3.20,
+            "12x14": 4.10, "12x16": 4.60
+        }
+    },
+
+    "amazon": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "8x11":  1.90, "10x12": 2.20, "12x16": 3.20
+        }
+    },
+
+    "flipkart_transparent": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "SB1 (6x8)":      1.90, "SB2.5 (8x11)": 2.50,
+            "SB2 (10x13)":    3.20, "SB3 (12x15.5)": 4.50,
+            "SB3.5 (14x18)":  5.10
+        }
+    },
+
+    "meesho_transparent": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "8x10 (TP-02)":  1.80, "9x10 (TP-15)":  1.95,
+            "10x12 (TP-04)": 2.20, "10x14 (TP-05)": 2.50,
+            "12x14 (TP-00)": 3.00, "12x16 (TP-06)": 3.30
+        }
+    },
+
+    "plain_paper_bag": {
+        "moq": 5000,
+        "note": "Price per piece. GST & transport extra.",
+        "sizes": {
+            "9x11": 3.00, "11x14": 4.40, "15x18": 6.50
+        }
+    },
+
+    "transparent_cover": {
+        "moq": 5000,
+        "note": "Price per pack. GST & transport extra.",
+        "sizes": {
+            "5.5x7.5":   60, "7.5x9.5":   65,
+            "9.5x11.5": 100, "11.5x13.5": 160
+        }
+    },
+
+    "honeycomb_roll": {
+        "moq": "15 rolls+",
+        "note": "Price per roll. GST & transport extra.",
+        "sizes": {
+            "10mtr": 110, "100mtr": 525
+        }
+    },
+
+    # Custom Printed White Covers — 5000 pcs
+    # Formula: (1000 pcs price × 2) − 10%
+    "custom_printed_white": {
+        "moq": 5000,
+        "note": "Price per 1000 pcs. GST & transport extra. Above 5000 → forward to team.",
+        "sizes": {
+            "6x8":   10798, "8x10":  12598, "10x12": 14398,
+            "10x14": 16018, "12x14": 17998, "12x16": 19798,
+            "14x18": 21598, "16x20": 24298, "20x23": 32398
+        }
+    },
+}
+
+# ═══════════════════════════════════════════════
+# BULK FORWARD TO TEAM RULES
+# ═══════════════════════════════════════════════
+
+FORWARD_TO_TEAM_BULK = {
+    "custom_printed_colour": "Above 1000 pcs → Forward to team",
+    "honeycomb_sleeve":      "Any bulk order → Forward to team",
+    "shipping_label_a4":     "Any bulk order → Forward to team",
+    "above_5000_custom":     "Above 5000 pcs custom white → Forward to team",
+}
