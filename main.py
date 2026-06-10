@@ -186,88 +186,82 @@ def webhook():
             if phone not in conversation_history:
                 conversation_history[phone] = []
 
-            # Try to get file URL from payload
+            # Get file URL
             file_url = None
             if msg_type == 'image':
                 file_url = (data.get('image') or {}).get('link') or (data.get('image') or {}).get('url')
             elif msg_type == 'document':
                 file_url = (data.get('document') or {}).get('link') or (data.get('document') or {}).get('url')
 
-            # Check conversation context — are we in a custom order flow?
-            history_text = ' '.join([m.get('content','') for m in conversation_history.get(phone, [])])
-            in_custom_order = any(word in history_text.lower() for word in ['logo', 'custom print', 'custom cover', 'printed cover', 'your design'])
-            pi_pending = 'GENERATE_PI:' in history_text
-
-            if in_custom_order and not pi_pending and file_url:
-                # This is a logo — generate mockup
-                print(f"[KITPAK] Logo received from {phone} — generating mockup")
-                file_bytes = download_wati_file(file_url)
-
-                if file_bytes:
-                    # Detect bag colour from conversation
-                    bag_colour = get_bag_colour_from_history(phone)
-
-                    # Save logo to temp file
+            # Determine file extension and mime type
+            ext = '.jpg'
+            mime_type = 'image/jpeg'
+            if msg_type == 'document':
+                fname = (data.get('document') or {}).get('fileName', 'file.jpg').lower()
+                if fname.endswith('.pdf'):
+                    ext = '.pdf'
+                    mime_type = 'application/pdf'
+                elif fname.endswith('.png'):
                     ext = '.png'
-                    if msg_type == 'document':
-                        fname = (data.get('document') or {}).get('fileName', 'logo.png').lower()
-                        if fname.endswith('.pdf'):
-                            ext = '.pdf'
-                        elif fname.endswith('.jpg') or fname.endswith('.jpeg'):
-                            ext = '.jpg'
-
-                    logo_path = f"/tmp/logo_{phone}{ext}"
-                    with open(logo_path, 'wb') as f:
-                        f.write(file_bytes)
-
-                    try:
-                        mockup_bytes = generate_mockup(logo_path, bag_colour=bag_colour)
-                        caption = get_mockup_caption()
-                        # Send mockup as image
-                        send_whatsapp_pdf(phone, mockup_bytes, filename="KITPAK_Mockup.png", caption=caption)
-                        print(f"[KITPAK] Mockup sent to {phone}")
-
-                        conversation_history[phone].append({
-                            'role': 'user',
-                            'content': '[Customer sent their logo file]'
-                        })
-                        reply = get_claude_reply(conversation_history[phone][-20:])
-                        conversation_history[phone].append({'role': 'assistant', 'content': reply})
-                        send_whatsapp_message(phone, reply)
-                    except Exception as e:
-                        print(f"[KITPAK] Mockup error: {e}")
-                        conversation_history[phone].append({
-                            'role': 'user',
-                            'content': '[Customer sent their logo file]'
-                        })
-                        reply = get_claude_reply(conversation_history[phone][-20:])
-                        conversation_history[phone].append({'role': 'assistant', 'content': reply})
-                        send_whatsapp_message(phone, reply)
+                    mime_type = 'image/png'
                 else:
-                    # Could not download file
-                    conversation_history[phone].append({
-                        'role': 'user',
-                        'content': '[Customer sent a file but it could not be downloaded]'
-                    })
-                    send_whatsapp_message(phone, "I received your file but had trouble opening it. Could you please send it again?")
+                    ext = '.jpg'
+                    mime_type = 'image/jpeg'
+
+            # Download file
+            file_bytes = download_wati_file(file_url) if file_url else None
+
+            if file_bytes:
+                # PDFs are always logos — skip vision classification
+                if ext == '.pdf':
+                    file_type = 'logo'
+                    print(f"[KITPAK] PDF file received — treating as logo")
+                else:
+                    # Use Claude vision to classify image
+                    file_type = classify_image(file_bytes, mime_type)
+                    print(f"[KITPAK] File classified as: {file_type}")
+
+                if file_type == 'logo':
+                    # Check if customer asked for mockup
+                    history_text = ' '.join([m.get('content','') for m in conversation_history.get(phone, [])])
+                    wants_mockup = any(word in history_text.lower() for word in ['mockup', 'mock up', 'sample', 'preview', 'design', 'custom print', 'printed cover', 'custom cover'])
+
+                    if wants_mockup:
+                        bag_colour = get_bag_colour_from_history(phone)
+                        logo_path = f"/tmp/logo_{phone}{ext}"
+                        with open(logo_path, 'wb') as f_out:
+                            f_out.write(file_bytes)
+                        try:
+                            mockup_bytes = generate_mockup(logo_path, bag_colour=bag_colour)
+                            send_whatsapp_pdf(phone, mockup_bytes, filename="KITPAK_Mockup.png",
+                                caption="Here is your mockup for reference. Please let us know if you would like to proceed.")
+                            print(f"[KITPAK] Mockup sent to {phone}")
+                            conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo file — mockup generated and sent]'})
+                        except Exception as e:
+                            print(f"[KITPAK] Mockup error: {e}")
+                            conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo file]'})
+                    else:
+                        conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo/design file]'})
+
+                    reply = get_claude_reply(conversation_history[phone][-20:])
+                    conversation_history[phone].append({'role': 'assistant', 'content': reply})
+                    send_whatsapp_message(phone, reply)
+
+                else:
+                    # Payment screenshot
+                    print(f"[KITPAK] Payment screenshot received from {phone}")
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent a payment screenshot]'})
+                    send_whatsapp_message(phone,
+                        "Thank you! We have received your payment screenshot. "
+                        "Our team will verify and confirm your order shortly.")
+                    sender_name = data.get('senderName', phone)
+                    send_whatsapp_message(OWNER_NUMBER,
+                        f"Payment screenshot received from {sender_name} ({phone}).\n"
+                        f"Please verify and reply:\n"
+                        f"CONFIRM {phone[-10:]}")
 
             else:
-                # Treat as payment screenshot
-                print(f"[KITPAK] Payment screenshot received from {phone}")
-                conversation_history[phone].append({
-                    'role': 'user',
-                    'content': '[Customer sent a payment screenshot]'
-                })
-                send_whatsapp_message(phone,
-                    "Thank you! We have received your payment screenshot. "
-                    "Our team will verify the payment and confirm your order shortly.")
-
-                # Alert owner
-                sender_name = data.get('senderName', phone)
-                send_whatsapp_message(OWNER_NUMBER,
-                    f"Payment screenshot received from {sender_name} ({phone}).\n"
-                    f"Please verify and reply:\n"
-                    f"CONFIRM {phone[-10:]}")
+                send_whatsapp_message(phone, "I had trouble opening that file. Could you please send it again?")
 
             return jsonify({'status': 'ok'}), 200
 
