@@ -3,8 +3,8 @@ import os
 import json
 from dotenv import load_dotenv
 from claude_service import get_claude_reply, extract_order_details
-from wati_service import send_whatsapp_message, send_product_images
-from pi_service import generate_pi_text
+from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
+from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message
 
 load_dotenv()
@@ -171,9 +171,16 @@ def webhook():
             try:
                 order = extract_order_details(history)
                 if order:
-                    pi_text = generate_pi_text(order)
-                    send_whatsapp_message(phone, pi_text)
-                    print(f"[KITPAK] PI sent to {phone}")
+                    # Try PDF first
+                    pdf_bytes = generate_pi_pdf(order)
+                    pdf_sent = send_whatsapp_pdf(phone, pdf_bytes, filename="KITPAK_ProformaInvoice.pdf", caption="Here is your Proforma Invoice. Please pay via UPI and share the screenshot to confirm your order.")
+                    if not pdf_sent:
+                        # Fallback to text PI
+                        pi_text = generate_pi_text(order)
+                        send_whatsapp_message(phone, pi_text)
+                        print(f"[KITPAK] PI sent as text to {phone}")
+                    else:
+                        print(f"[KITPAK] PI PDF sent to {phone}")
             except Exception as e:
                 print(f"[KITPAK] PI generation error: {e}")
 
