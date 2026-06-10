@@ -150,6 +150,13 @@ def webhook():
         if not phone:
             return jsonify({'status': 'ignored'}), 200
 
+        # ── Ignore outgoing messages sent by the bot itself ──
+        event_type = data.get('eventType', '')
+        owner = data.get('owner', False)
+        status = data.get('statusString', '')
+        if owner or event_type in ['message_sent', 'outgoing'] or status in ['SENT', 'DELIVERED', 'READ']:
+            return jsonify({'status': 'ignored'}), 200
+
         # ── Team command from owner number ──
         if phone == OWNER_NUMBER and message_text:
             if handle_team_command(phone, message_text):
