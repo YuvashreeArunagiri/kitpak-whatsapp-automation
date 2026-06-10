@@ -3,8 +3,9 @@ import os
 import json
 from dotenv import load_dotenv
 from claude_service import get_claude_reply, extract_order_details
-from wati_service import send_whatsapp_message
+from wati_service import send_whatsapp_message, send_product_images
 from pi_service import generate_pi_text
+from image_service import get_images_from_message
 
 load_dotenv()
 
@@ -16,16 +17,10 @@ OWNER_NUMBER = "918300475706"
 
 # ─── Team keyword commands ───────────────────────────────────
 def handle_team_command(phone: str, message: str) -> bool:
-    """
-    Handles commands sent by team from owner number.
-    Returns True if it was a team command, False otherwise.
-    """
     msg = message.strip().upper()
 
-    # CONFIRM <customer_phone>
     if msg.startswith("CONFIRM "):
         customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
-        # Ensure 91 prefix
         if not customer_phone.startswith("91"):
             customer_phone = "91" + customer_phone
         confirmation_msg = (
@@ -39,7 +34,6 @@ def handle_team_command(phone: str, message: str) -> bool:
         print(f"[KITPAK] Order confirmed for {customer_phone}")
         return True
 
-    # DISPATCH <customer_phone> <tracking_number>
     if msg.startswith("DISPATCH "):
         parts = message.strip().split(" ", 2)
         if len(parts) >= 2:
@@ -59,7 +53,6 @@ def handle_team_command(phone: str, message: str) -> bool:
             print(f"[KITPAK] Dispatch sent to {customer_phone}")
             return True
 
-    # CANCEL <customer_phone>
     if msg.startswith("CANCEL "):
         customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
         if not customer_phone.startswith("91"):
@@ -74,11 +67,10 @@ def handle_team_command(phone: str, message: str) -> bool:
         print(f"[KITPAK] Order cancelled for {customer_phone}")
         return True
 
-    # HELP — show available commands
     if msg == "HELP":
         help_msg = (
             "KITPAK Team Commands:\n\n"
-            "CONFIRM <phone> — Confirm payment & order\n"
+            "CONFIRM <phone> — Confirm payment and order\n"
             "DISPATCH <phone> <tracking> — Send dispatch details\n"
             "CANCEL <phone> — Cancel order\n\n"
             "Example:\n"
@@ -135,14 +127,13 @@ def webhook():
             conversation_history[phone].append({'role': 'assistant', 'content': reply})
             send_whatsapp_message(phone, reply)
 
-            # If it looks like a payment screenshot, alert owner
             alert_msg = (
                 f"Payment screenshot received from {data.get('senderName', phone)} ({phone}).\n"
                 f"Please verify and reply:\n"
                 f"CONFIRM {phone[-10:]}"
             )
             send_whatsapp_message(OWNER_NUMBER, alert_msg)
-            print(f"[KITPAK] Payment screenshot received from {phone} — owner alerted")
+            print(f"[KITPAK] File received from {phone} — owner alerted")
             return jsonify({'status': 'ok'}), 200
 
         if msg_type not in ['text', '']:
@@ -166,10 +157,16 @@ def webhook():
             'content': reply
         })
 
+        # ── Send product images if this is a product enquiry ──
+        images = get_images_from_message(message_text)
+        if images:
+            send_product_images(phone, images)
+            print(f"[KITPAK] Product images sent to {phone}")
+
         send_whatsapp_message(phone, reply)
         print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
 
-        # Check if PI should be generated
+        # ── Generate PI if needed ──
         if 'GENERATE_PI:' in reply:
             try:
                 order = extract_order_details(history)
