@@ -5,7 +5,7 @@ import json
 import base64
 import urllib.request
 from dotenv import load_dotenv
-from claude_service import get_claude_reply, extract_order_details
+from claude_service import get_claude_reply, extract_order_details, classify_image
 from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message
