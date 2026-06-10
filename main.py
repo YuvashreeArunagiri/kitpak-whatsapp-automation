@@ -276,14 +276,18 @@ def webhook():
             send_product_images(phone, images)
             print(f"[KITPAK] Product images sent to {phone}")
 
-        # ── Send text reply ──
-        send_whatsapp_message(phone, reply)
+        # ── Send text reply — hide GENERATE_PI line from customer ──
+        if 'GENERATE_PI:' in reply:
+            # Send a clean confirmation message to customer instead of raw GENERATE_PI
+            send_whatsapp_message(phone, "Thank you! Generating your invoice now, please wait a moment.")
+        else:
+            send_whatsapp_message(phone, reply)
         print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
 
         # ── Generate and send PI as PDF ──
         if 'GENERATE_PI:' in reply:
             try:
-                order = extract_order_details(history)
+                order = extract_order_details(reply)
                 if order:
                     pdf_bytes = generate_pi_pdf(order)
                     pdf_sent = send_whatsapp_pdf(
@@ -293,12 +297,14 @@ def webhook():
                         caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
                     )
                     if not pdf_sent:
-                        # Fallback to text
                         pi_text = generate_pi_text(order)
                         send_whatsapp_message(phone, pi_text)
                         print(f"[KITPAK] PI sent as text fallback to {phone}")
                     else:
                         print(f"[KITPAK] PI PDF sent to {phone}")
+                else:
+                    send_whatsapp_message(phone, "Sorry, I had trouble generating your invoice. Our team will send it to you shortly.")
+                    send_whatsapp_message(OWNER_NUMBER, f"PI generation failed for {phone} — please send manually.")
             except Exception as e:
                 print(f"[KITPAK] PI generation error: {e}")
                 import traceback
