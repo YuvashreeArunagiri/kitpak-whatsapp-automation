@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from datetime import datetime
 import os
 import io
 import json
@@ -10,12 +11,31 @@ from wati_service import send_whatsapp_message, send_product_images, send_whatsa
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message
 from mockup_service import generate_mockup, get_mockup_caption
+from sheets_service import append_daily_report, append_order_to_sheet
+import threading
+import time
 
 load_dotenv()
 
 app = Flask(__name__)
 
 conversation_history = {}
+
+def daily_report_scheduler():
+    """Background thread — sends daily report to Google Sheets at 6 PM."""
+    while True:
+        now = datetime.now()
+        # Check if it's 6 PM (18:00)
+        if now.hour == 18 and now.minute == 0:
+            print("[KITPAK] Sending daily report to Google Sheets...")
+            append_daily_report(conversation_history)
+            send_whatsapp_message(OWNER_NUMBER, f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            time.sleep(61)  # sleep 61 seconds to avoid double-sending
+        time.sleep(30)  # check every 30 seconds
+
+# Start scheduler in background
+scheduler_thread = threading.Thread(target=daily_report_scheduler, daemon=True)
+scheduler_thread.start()
 pending_logo = {}        # phone -> logo bytes (waiting for bag colour confirmation)
 custom_order_state = {}  # phone -> {colour, size, qty}
 
@@ -270,6 +290,7 @@ def webhook():
         })
 
         history = conversation_history[phone][-20:]
+        time.sleep(10)  # Natural delay before replying
         reply = get_claude_reply(history)
 
         conversation_history[phone].append({
@@ -303,6 +324,11 @@ def webhook():
                         filename="KITPAK_ProformaInvoice.pdf",
                         caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
                     )
+                    # Log order to Google Sheets
+                    try:
+                        append_order_to_sheet(phone, order)
+                    except Exception as se:
+                        print(f"[KITPAK] Sheets logging error: {se}")
                     if not pdf_sent:
                         pi_text = generate_pi_text(order)
                         send_whatsapp_message(phone, pi_text)
