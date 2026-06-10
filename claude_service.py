@@ -56,55 +56,69 @@ Never judge language from customer's name or location.
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 ABOUT KITPAK
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-Business: KITPAK / SARAVANA TRADING, Tirupur - 641605
+Business: KITPAK / SARAVANA TRADING, Tirupur - 641603
 GSTIN: 33ATTPG0334P2ZD
 All prices include GST. Free shipping on all standard orders.
 Payment: UPI only (GPay, PhonePe, Paytm, BHIM). No COD, no bank transfer.
 UPI ID: 9489501487@okbizaxis
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-PRODUCTS & PRICING
+PRODUCTS & PRICING (from official price list)
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-All courier covers: pack of 100. MOQ = 100.
+All prices include GST and free shipping. MOQ = 100 pcs for all covers.
 
-WHITE COURIER COVERS (100 pcs):
-6x8=₹230 | 8x10=₹290 | 10x12=₹320 | 10x14=₹360 | 12x14=₹460
-12x16=₹560 | 14x18=₹860 | 16x20=₹1060 | 20x23=₹1260
+WHITE COURIER COVERS:
+100 pcs: 6x8=₹230 | 8x10=₹290 | 9x12=₹310 | 10x12=₹320 | 10x14=₹360 | 12x14=₹460 | 12x16=₹560 | 14x18=₹860 | 16x20=₹1060 | 20x24=₹1260
+1000 pcs: 6x8=₹2150 | 8x10=₹2750 | 9x12=₹2950 | 10x12=₹3050 | 10x14=₹3450 | 12x14=₹4250 | 12x16=₹5350 | 14x18=₹8350 | 16x20=₹10350 | 20x24=₹12350
+5000 pcs (per piece, transport extra): 6x8=₹1.50 | 8x10=₹1.90 | 9x12=₹1.90 | 10x12=₹2.20 | 10x14=₹2.40 | 12x14=₹2.90 | 12x16=₹3.40 | 14x18=₹6.00 | 16x20=₹7.25 | 20x24=₹8.00
 
-COLOUR COURIER COVERS — Pink/Purple/Black (100 pcs):
-6x8=₹340 | 8x10=₹380 | 10x12=₹530 | 12x14=₹610 | 12x16=₹680
+COLOUR COURIER COVERS — Pink/Purple/Black:
+100 pcs: 6x8=₹340 | 8x10=₹380 | 10x12=₹530 | 12x14=₹610 | 12x16=₹680
+1000 pcs: 6x8=₹3200 | 8x10=₹3600 | 10x12=₹5200 | 12x14=₹5900 | 12x16=₹6600
+5000 pcs (per piece, transport extra): 6x8=₹2.20 | 8x10=₹2.40 | 10x12=₹3.20 | 12x14=₹4.10 | 12x16=₹4.60
 
-KRAFT/BROWN COVERS (100 pcs):
-9x11=₹440 | 11x14=₹580 | 15x18=₹880
+AMAZON COVERS:
+100 pcs: 8x11=₹320 | 10x12=₹360 | 12x16=₹520
+5000 pcs (per piece, transport extra): 8x11=₹1.90 | 10x12=₹2.20 | 12x16=₹3.20
 
-MEESHO TRANSPARENT (100 pcs, with barcode, non-POD):
-8x10=₹300 | 9x10=₹340 | 10x12=₹370 | 10x14=₹450 | 12x14=₹540 | 12x16=₹580
+FLIPKART TRANSPARENT COVERS:
+100 pcs: SB1(6x8)=₹290 | SB2.5(8x11)=₹360 | SB2(10x13)=₹430 | SB3(12x15.5)=₹630 | SB3.5(14x18)=₹690
+5000 pcs (per piece, transport extra): SB1=₹1.90 | SB2.5=₹2.50 | SB2=₹3.20 | SB3=₹4.50 | SB3.5=₹5.10
 
-FLIPKART TRANSPARENT (100 pcs, non-POD):
-SB1(6x8)=₹290 | SB2.5(8x11)=₹360 | SB2(10x13)=₹430 | SB3(12x15.5)=₹630 | SB3.5(14x18)=₹690
+MEESHO TRANSPARENT COVERS:
+100 pcs: 8x10(TP-02)=₹300 | 9x10(TP-15)=₹340 | 10x12(TP-04)=₹370 | 10x14(TP-05)=₹450 | 12x14(TP-00)=₹540 | 12x16(TP-06)=₹580
+5000 pcs (per piece, transport extra): 8x10=₹1.80 | 9x10=₹1.95 | 10x12=₹2.20 | 10x14=₹2.50 | 12x14=₹3.00 | 12x16=₹3.30
 
-AMAZON COVERS (100 pcs, non-POD):
-8x11=₹320 | 10x12=₹360 | 12x16=₹520
-
-PACKING COVERS TRANSPARENT:
+TRANSPARENT PACKING COVERS:
 100 pcs: 5.5x7.5=₹140 | 7.5x9.5=₹190 | 9.5x11.5=₹240 | 11.5x13.5=₹320
 500 pcs: 5.5x7.5=₹490 | 7.5x9.5=₹870 | 9.5x11.5=₹1250 | 11.5x13.5=₹1600
+5000 pcs (per piece, transport extra): 5.5x7.5=₹60 | 7.5x9.5=₹65 | 9.5x11.5=₹100 | 11.5x13.5=₹160
 
-CUSTOM PRINTED WHITE (POD):
-100 pcs: 6x8=₹1000 | 8x10=₹1090 | 10x12=₹1120 | 10x14=₹1160 | 12x14=₹1260
-         12x16=₹1360 | 14x18=₹1660 | 16x20=₹1860 | 20x23=₹2060
-1000 pcs: 6x8=₹5999 | 8x10=₹6999 | 10x12=₹7999 | 10x14=₹8899 | 12x14=₹9999
-          12x16=₹10999 | 14x18=₹11999 | 16x20=₹13499 | 20x23=₹17999
+PLAIN PAPER BAG (Kraft):
+100 pcs: 9x11=₹440 | 11x14=₹580 | 15x18=₹880
+5000 pcs (per piece, transport extra): 9x11=₹3.00 | 11x14=₹4.40 | 15x18=₹6.50
 
-CUSTOM PRINTED COLOUR — Pink/Purple/Black (POD):
+CUSTOM PRINTED WHITE COVERS (POD):
+100 pcs: 6x8=₹1000 | 8x10=₹1090 | 10x12=₹1120 | 10x14=₹1160 | 12x14=₹1260 | 12x16=₹1360 | 14x18=₹1660 | 16x20=₹1860 | 20x23=₹2060
+1000 pcs: 6x8=₹5999 | 8x10=₹6999 | 10x12=₹7999 | 10x14=₹8899 | 12x14=₹9999 | 12x16=₹10999 | 14x18=₹11999 | 16x20=₹13499 | 20x23=₹17999
+Above 1000 pcs → Forward to team
+
+CUSTOM PRINTED COLOUR COVERS — Pink/Purple/Black (POD):
 100 pcs: 6x8=₹1140 | 8x10=₹1190 | 10x12=₹1330 | 12x14=₹1410 | 12x16=₹1510
 1000 pcs: 6x8=₹6999 | 8x10=₹7199 | 10x12=₹8999 | 12x14=₹11499 | 12x16=₹11999
+Above 1000 pcs → Forward to team
 
-SHIPPING LABEL 4cut A4 (100 sheets): ₹399
-THERMAL LABEL 100x150mm (400/roll): ₹419
-HONEYCOMB PAPER ROLL: 10mtr=₹250 | 10mtrx3=₹599 | 100mtrx2=₹1999
-HONEYCOMB PAPER SLEEVE (100 pcs): 10cm=₹400 | 15cm=₹600 | 20cm=₹800 | 22.5cm=₹1000
-                                   30cm=₹1200 | 40cm=₹1600 | 45cm=₹1800 | 90cm=₹3600
+THERMAL SHIPPING LABEL ROLL (100x150mm, 400 labels): ₹399 per roll
+THERMAL SHIPPING LABEL A4 4-CUT (100 sheets): ₹399 per pack
+Bulk labels → Forward to team
+
+HONEYCOMB PAPER ROLL:
+10mtr x1=₹250 | 10mtr x3=₹599 | 100mtr x2=₹1999
+15 rolls+: 10mtr=₹110/roll | 100mtr=₹525/roll
+
+HONEYCOMB PAPER SLEEVES (MOQ 100 pcs):
+10cm=₹400 | 15cm=₹600 | 20cm=₹800 | 22.5cm=₹1000 | 30cm=₹1200 | 40cm=₹1600 | 45cm=₹1800 | 90cm=₹3600
+Bulk sleeves → Forward to team
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 CATALOGUE
