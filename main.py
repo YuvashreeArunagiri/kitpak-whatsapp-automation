@@ -12,6 +12,85 @@ app = Flask(__name__)
 
 conversation_history = {}
 
+OWNER_NUMBER = "918300475706"
+
+# ─── Team keyword commands ───────────────────────────────────
+def handle_team_command(phone: str, message: str) -> bool:
+    """
+    Handles commands sent by team from owner number.
+    Returns True if it was a team command, False otherwise.
+    """
+    msg = message.strip().upper()
+
+    # CONFIRM <customer_phone>
+    if msg.startswith("CONFIRM "):
+        customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
+        # Ensure 91 prefix
+        if not customer_phone.startswith("91"):
+            customer_phone = "91" + customer_phone
+        confirmation_msg = (
+            "Great news! Your payment has been verified and confirmed. "
+            "Your order is now being processed. "
+            "We will share the dispatch and tracking details shortly. "
+            "Thank you for choosing KITPAK!"
+        )
+        send_whatsapp_message(customer_phone, confirmation_msg)
+        send_whatsapp_message(OWNER_NUMBER, f"Done! Confirmation sent to {customer_phone}.")
+        print(f"[KITPAK] Order confirmed for {customer_phone}")
+        return True
+
+    # DISPATCH <customer_phone> <tracking_number>
+    if msg.startswith("DISPATCH "):
+        parts = message.strip().split(" ", 2)
+        if len(parts) >= 2:
+            customer_phone = parts[1].strip().replace("+", "").replace(" ", "")
+            if not customer_phone.startswith("91"):
+                customer_phone = "91" + customer_phone
+            tracking = parts[2].strip() if len(parts) > 2 else "Will be updated shortly"
+            dispatch_msg = (
+                f"Your order has been dispatched!\n\n"
+                f"Tracking Number: {tracking}\n\n"
+                f"You can track your order using the above number. "
+                f"Expected delivery in 3-5 business days. "
+                f"Thank you for choosing KITPAK!"
+            )
+            send_whatsapp_message(customer_phone, dispatch_msg)
+            send_whatsapp_message(OWNER_NUMBER, f"Done! Dispatch details sent to {customer_phone}.")
+            print(f"[KITPAK] Dispatch sent to {customer_phone}")
+            return True
+
+    # CANCEL <customer_phone>
+    if msg.startswith("CANCEL "):
+        customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
+        if not customer_phone.startswith("91"):
+            customer_phone = "91" + customer_phone
+        cancel_msg = (
+            "We regret to inform you that your order could not be processed. "
+            "Please contact us for further assistance. "
+            "We apologise for the inconvenience."
+        )
+        send_whatsapp_message(customer_phone, cancel_msg)
+        send_whatsapp_message(OWNER_NUMBER, f"Done! Cancellation sent to {customer_phone}.")
+        print(f"[KITPAK] Order cancelled for {customer_phone}")
+        return True
+
+    # HELP — show available commands
+    if msg == "HELP":
+        help_msg = (
+            "KITPAK Team Commands:\n\n"
+            "CONFIRM <phone> — Confirm payment & order\n"
+            "DISPATCH <phone> <tracking> — Send dispatch details\n"
+            "CANCEL <phone> — Cancel order\n\n"
+            "Example:\n"
+            "CONFIRM 9876543210\n"
+            "DISPATCH 9876543210 ST123456789"
+        )
+        send_whatsapp_message(OWNER_NUMBER, help_msg)
+        return True
+
+    return False
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -38,19 +117,32 @@ def webhook():
 
         msg_type = data.get('type', 'text')
 
-        # Handle image/document — treat as logo/file submission
+        # ── Team command from owner number ──
+        if phone == OWNER_NUMBER:
+            if handle_team_command(phone, message_text):
+                return jsonify({'status': 'ok'}), 200
+
+        # ── Handle image/document — logo/payment screenshot ──
         if msg_type in ['image', 'document', 'video']:
             if phone not in conversation_history:
                 conversation_history[phone] = []
             conversation_history[phone].append({
                 'role': 'user',
-                'content': '[Customer sent a logo/design file]'
+                'content': '[Customer sent a file — could be logo or payment screenshot]'
             })
             history = conversation_history[phone][-20:]
             reply = get_claude_reply(history)
             conversation_history[phone].append({'role': 'assistant', 'content': reply})
             send_whatsapp_message(phone, reply)
-            print(f"[KITPAK] Media received from {phone}")
+
+            # If it looks like a payment screenshot, alert owner
+            alert_msg = (
+                f"Payment screenshot received from {data.get('senderName', phone)} ({phone}).\n"
+                f"Please verify and reply:\n"
+                f"CONFIRM {phone[-10:]}"
+            )
+            send_whatsapp_message(OWNER_NUMBER, alert_msg)
+            print(f"[KITPAK] Payment screenshot received from {phone} — owner alerted")
             return jsonify({'status': 'ok'}), 200
 
         if msg_type not in ['text', '']:
