@@ -122,12 +122,21 @@ def send_product_images(phone: str, image_filenames: list, caption: str = "") ->
 
 
 def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.pdf", caption: str = "") -> bool:
-    """Send a PDF file via WATI using multipart upload."""
+    """Send a PDF or image file via WATI using multipart upload."""
     wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
     if not wati_api_url or not wati_api_token:
         print("[KITPAK] WATI credentials missing")
         return False
+
+    # Detect mime type from filename
+    fn_lower = filename.lower()
+    if fn_lower.endswith('.png'):
+        mime_type = 'image/png'
+    elif fn_lower.endswith('.jpg') or fn_lower.endswith('.jpeg'):
+        mime_type = 'image/jpeg'
+    else:
+        mime_type = 'application/pdf'
 
     headers = {
         'Authorization': f'Bearer {wati_api_token}',
@@ -137,7 +146,7 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
     try:
         url = f"{wati_api_url}/api/v1/sendSessionFile/{phone}"
         files = {
-            'file': (filename, pdf_bytes, 'application/pdf')
+            'file': (filename, pdf_bytes, mime_type)
         }
         data = {'caption': caption} if caption else {}
         response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
@@ -152,7 +161,7 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
     try:
         url = f"{wati_api_url}/api/v1/sendFile/{phone}"
         files = {
-            'file': (filename, pdf_bytes, 'application/pdf')
+            'file': (filename, pdf_bytes, mime_type)
         }
         data = {'caption': caption} if caption else {}
         response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
