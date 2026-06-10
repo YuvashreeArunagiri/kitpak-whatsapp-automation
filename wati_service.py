@@ -119,3 +119,49 @@ def send_product_images(phone: str, image_filenames: list, caption: str = "") ->
             sent = True
         caption = ""  # caption only on first image
     return sent
+
+
+def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.pdf", caption: str = "") -> bool:
+    """Send a PDF file via WATI using multipart upload."""
+    wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
+    wati_api_token = os.environ.get('WATI_API_TOKEN', '')
+    if not wati_api_url or not wati_api_token:
+        print("[KITPAK] WATI credentials missing")
+        return False
+
+    headers = {
+        'Authorization': f'Bearer {wati_api_token}',
+    }
+
+    # Method 1 — multipart upload
+    try:
+        url = f"{wati_api_url}/api/v1/sendSessionFile/{phone}"
+        files = {
+            'file': (filename, pdf_bytes, 'application/pdf')
+        }
+        data = {'caption': caption} if caption else {}
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+        print(f"[KITPAK] PDF send response: {response.status_code} - {response.text[:200]}")
+        if response.status_code == 200:
+            print(f"[KITPAK] PDF sent to {phone}")
+            return True
+    except Exception as e:
+        print(f"[KITPAK] PDF send error: {e}")
+
+    # Method 2 — sendFile endpoint
+    try:
+        url = f"{wati_api_url}/api/v1/sendFile/{phone}"
+        files = {
+            'file': (filename, pdf_bytes, 'application/pdf')
+        }
+        data = {'caption': caption} if caption else {}
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+        print(f"[KITPAK] PDF method 2 response: {response.status_code} - {response.text[:200]}")
+        if response.status_code == 200:
+            print(f"[KITPAK] PDF sent via method 2 to {phone}")
+            return True
+    except Exception as e:
+        print(f"[KITPAK] PDF method 2 error: {e}")
+
+    print(f"[KITPAK] PDF send failed for {phone}")
+    return False
