@@ -214,8 +214,9 @@ Bulk 5000+ → Transport
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 FOLLOW-UP
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-General enquiry → Day 1 follow-up only.
-PI sent → Day 1 + Day 3 follow-up.
+Only ONE follow-up allowed — only after PI has been sent, send one follow-up the next day.
+No follow-up for general enquiries.
+Never send more than one follow-up message ever.
 EOD summary → 7:30 PM to 8300475706.
 """
 
