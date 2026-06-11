@@ -20,6 +20,7 @@ load_dotenv()
 app = Flask(__name__)
 
 conversation_history = {}
+processed_message_ids = set()  # Track processed message IDs to prevent duplicates
 
 def daily_report_scheduler():
     """Background thread — sends daily report to Google Sheets at 6 PM."""
@@ -171,16 +172,24 @@ def webhook():
             return jsonify({'status': 'ignored'}), 200
 
         # ── Only process incoming customer messages ──
-        # WATI eventType is 'message' for incoming, and 'sentMessageREAD',
-        # 'sentMessageDELIVERED_v2', 'templateMessageSent_v2' etc for outgoing
         event_type = data.get('eventType', '')
         owner = data.get('owner', False)
 
-        # Block anything that is not an incoming customer message
         if owner:
             return jsonify({'status': 'ignored'}), 200
         if event_type != 'message':
             return jsonify({'status': 'ignored'}), 200
+
+        # ── Deduplicate — ignore already processed message IDs ──
+        message_id = data.get('id', '') or data.get('whatsappMessageId', '')
+        if message_id and message_id in processed_message_ids:
+            print(f"[KITPAK] Duplicate message ignored: {message_id}")
+            return jsonify({'status': 'ignored'}), 200
+        if message_id:
+            processed_message_ids.add(message_id)
+            # Keep set size manageable
+            if len(processed_message_ids) > 1000:
+                processed_message_ids.clear()
 
         # ── Team command from owner number ──
         if phone == OWNER_NUMBER and message_text:
