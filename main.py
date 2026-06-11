@@ -171,9 +171,22 @@ def webhook():
             return jsonify({'status': 'ignored'}), 200
 
         # ── Ignore outgoing messages sent by the bot itself ──
+        # WATI sends webhooks for both incoming and outgoing messages
+        # Incoming messages have sourceType=7, outgoing have sourceType=0 or None
+        # Also check if the message was sent by the bot (no senderName or operatorName set)
         event_type = data.get('eventType', '')
         owner = data.get('owner', False)
-        if owner or event_type in ['message_sent', 'outgoing']:
+        source_type = data.get('sourceType', None)
+        operator_name = data.get('operatorName', None)
+        sender_name = data.get('senderName', None)
+        
+        # Block outgoing: owner=True, or eventType is outgoing, or sourceType is not 7 (customer-initiated)
+        if owner:
+            return jsonify({'status': 'ignored'}), 200
+        if event_type in ['message_sent', 'outgoing']:
+            return jsonify({'status': 'ignored'}), 200
+        # If sourceType exists and is not 7, it's likely an outgoing/system message
+        if source_type is not None and source_type != 7:
             return jsonify({'status': 'ignored'}), 200
 
         # ── Team command from owner number ──
