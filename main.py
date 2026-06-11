@@ -103,13 +103,48 @@ def handle_team_command(phone: str, message: str) -> bool:
 def download_wati_file(file_url: str) -> bytes:
     """Download a file from WATI media URL."""
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
+    
+    # Try with requests library (handles redirects better)
     try:
-        req = urllib.request.Request(file_url, headers={'Authorization': f'Bearer {wati_api_token}'})
+        response = requests.get(
+            file_url,
+            headers={
+                'Authorization': f'Bearer {wati_api_token}',
+                'Accept': '*/*'
+            },
+            timeout=15,
+            allow_redirects=True
+        )
+        if response.status_code == 200:
+            return response.content
+        print(f"[KITPAK] File download status: {response.status_code}")
+    except Exception as e:
+        print(f"[KITPAK] File download error (requests): {e}")
+
+    # Try without auth header
+    try:
+        response = requests.get(file_url, timeout=15, allow_redirects=True)
+        if response.status_code == 200:
+            return response.content
+        print(f"[KITPAK] File download (no auth) status: {response.status_code}")
+    except Exception as e:
+        print(f"[KITPAK] File download error (no auth): {e}")
+
+    # Try with urllib as fallback
+    try:
+        req = urllib.request.Request(
+            file_url,
+            headers={
+                'Authorization': f'Bearer {wati_api_token}',
+                'User-Agent': 'Mozilla/5.0'
+            }
+        )
         with urllib.request.urlopen(req, timeout=15) as r:
             return r.read()
     except Exception as e:
-        print(f"[KITPAK] File download error: {e}")
-        return None
+        print(f"[KITPAK] File download error (urllib): {e}")
+
+    return None
 
 
 def is_likely_logo(data: dict) -> bool:
