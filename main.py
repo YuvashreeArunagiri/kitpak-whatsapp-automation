@@ -201,12 +201,17 @@ def webhook():
             if phone not in conversation_history:
                 conversation_history[phone] = []
 
-            # Get file URL
+            # Get file URL — WATI stores it in 'data' field directly
             file_url = None
             if msg_type == 'image':
-                file_url = (data.get('image') or {}).get('link') or (data.get('image') or {}).get('url')
+                file_url = (data.get('data') or 
+                           (data.get('image') or {}).get('link') or 
+                           (data.get('image') or {}).get('url'))
             elif msg_type == 'document':
-                file_url = (data.get('document') or {}).get('link') or (data.get('document') or {}).get('url')
+                file_url = (data.get('data') or 
+                           (data.get('document') or {}).get('link') or 
+                           (data.get('document') or {}).get('url'))
+            print(f"[KITPAK] File URL: {file_url}")
 
             # Determine file extension and mime type
             ext = '.jpg'
