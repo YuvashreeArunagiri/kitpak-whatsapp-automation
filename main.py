@@ -47,6 +47,7 @@ custom_order_state = {}  # phone -> {colour, size, qty}
 
 OWNER_NUMBER = "918300475706"
 KITPAK_UPI_ID = os.environ.get("KITPAK_UPI_ID", "9489501487@okbizaxis")
+SHEET_AUTOMATION_SECRET = os.environ.get('SHEET_AUTOMATION_SECRET', '')
 
 
 # ─── Team keyword commands ───────────────────────────────────
@@ -458,6 +459,62 @@ def webhook():
 
     except Exception as e:
         print(f"[KITPAK] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/sheet-notify', methods=['POST'])
+def sheet_notify():
+    """
+    Receives notification requests from the Google Sheets Apps Script automation
+    (OrderTracking tab: payment confirmation / dispatch notification).
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'status': 'error', 'message': 'no data'}), 400
+
+        if SHEET_AUTOMATION_SECRET and data.get('secret') != SHEET_AUTOMATION_SECRET:
+            print("[KITPAK] Sheet-notify: unauthorized request (bad secret)")
+            return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+
+        msg_type = data.get('type')
+        phone = (data.get('phone') or '').strip().replace('+', '').replace(' ', '')
+        if not phone:
+            return jsonify({'status': 'error', 'message': 'missing phone'}), 400
+        if not phone.startswith('91'):
+            phone = '91' + phone
+
+        customer_name = data.get('customer_name', 'Customer')
+
+        if msg_type == 'payment':
+            message = (
+                f"Hi {customer_name},\n\n"
+                f"We have received your payment successfully. "
+                f"Your order is now being processed and will be dispatched shortly.\n\n"
+                f"Thank you for choosing KITPAK."
+            )
+        elif msg_type == 'dispatch':
+            tracking = data.get('tracking_number', '')
+            courier = data.get('courier_partner', '')
+            message = (
+                f"Hi {customer_name},\n\n"
+                f"Your KITPAK order has been dispatched.\n"
+                f"Courier Partner: {courier}\n"
+                f"Tracking Number: {tracking}\n\n"
+                f"You can track your shipment using the above tracking number.\n\n"
+                f"Thank you for choosing KITPAK."
+            )
+        else:
+            return jsonify({'status': 'error', 'message': 'unknown type'}), 400
+
+        sent = send_whatsapp_message(phone, message)
+        print(f"[KITPAK] Sheet-notify ({msg_type}) to {phone}: {'sent' if sent else 'failed'}")
+        return jsonify({'status': 'ok' if sent else 'error'}), (200 if sent else 500)
+
+    except Exception as e:
+        print(f"[KITPAK] Sheet-notify error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
