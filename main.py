@@ -11,7 +11,6 @@ from claude_service import get_claude_reply, extract_order_details, classify_ima
 from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message
-from mockup_service import generate_mockup, get_mockup_caption
 from sheets_service import append_daily_report, append_order_to_sheet
 import threading
 import time
@@ -280,30 +279,22 @@ def webhook():
                     print(f"[KITPAK] File classified as: {file_type}")
 
                 if file_type == 'logo':
-                    # Check if customer asked for mockup
+                    # Mockup generation is manual — alert owner with customer's logo/design file
                     history_text = ' '.join([m.get('content','') for m in conversation_history.get(phone, [])])
                     wants_mockup = any(word in history_text.lower() for word in ['mockup', 'mock up', 'sample', 'preview', 'design', 'custom print', 'printed cover', 'custom cover'])
 
-                    if wants_mockup:
-                        bag_colour = get_bag_colour_from_history(phone)
-                        logo_path = f"/tmp/logo_{phone}{ext}"
-                        with open(logo_path, 'wb') as f_out:
-                            f_out.write(file_bytes)
-                        try:
-                            mockup_bytes = generate_mockup(logo_path, bag_colour=bag_colour)
-                            send_whatsapp_pdf(phone, mockup_bytes, filename="KITPAK_Mockup.png",
-                                caption="Here is your mockup for reference. Please let us know if you would like to proceed.")
-                            print(f"[KITPAK] Mockup sent to {phone}")
-                            conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo file — mockup generated and sent]'})
-                        except Exception as e:
-                            print(f"[KITPAK] Mockup error: {e}")
-                            conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo file]'})
-                    else:
-                        conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo/design file]'})
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo/design file]'})
 
                     reply = get_claude_reply(conversation_history[phone][-20:])
                     conversation_history[phone].append({'role': 'assistant', 'content': reply})
                     send_whatsapp_message(phone, reply)
+
+                    if wants_mockup:
+                        sender_name = data.get('senderName', phone)
+                        send_whatsapp_message(OWNER_NUMBER,
+                            f"Mockup request from {sender_name} ({phone}). "
+                            f"Customer has sent their logo/design file — please prepare the mockup and share it with them.")
+                        print(f"[KITPAK] Mockup request alerted to owner for {phone}")
 
                 else:
                     # Payment screenshot
@@ -436,6 +427,26 @@ def webhook():
         print(f"[KITPAK] Error: {e}")
         import traceback
         traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/daily-report', methods=['GET', 'POST'])
+def trigger_daily_report():
+    """
+    Endpoint for external cron service to trigger the daily report.
+    Call this once daily at 6 PM IST (12:30 PM UTC).
+    Example: https://kitpak-whatsapp-bot.onrender.com/daily-report
+    """
+    try:
+        print("[KITPAK] Daily report triggered via cron")
+        success = append_daily_report(conversation_history)
+        if success:
+            send_whatsapp_message(OWNER_NUMBER, f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            return jsonify({'status': 'ok', 'message': 'Daily report sent'}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to send report'}), 500
+    except Exception as e:
+        print(f"[KITPAK] Daily report trigger error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
