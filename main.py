@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from claude_service import get_claude_reply, extract_order_details, classify_image, extract_payment_info
 from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
-from image_service import get_images_from_message
+from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product
 from sheets_service import append_daily_report, append_order_to_sheet
 import threading
 import time
@@ -22,6 +22,10 @@ app = Flask(__name__)
 conversation_history = {}
 processed_message_ids = set()  # Track processed message IDs to prevent duplicates
 pending_orders = {}  # phone -> {'total': amount, 'pi_number': str} — set when PI is generated
+
+# Words that indicate the customer wants to see a photo/picture of a product
+PICTURE_REQUEST_WORDS = ['picture', 'photo', 'photos', 'pictures', 'image', 'images', 'reference', 'sample', 'pic ', 'pics']
+
 
 def daily_report_scheduler():
     """Background thread — sends daily report to Google Sheets at 6 PM."""
@@ -105,7 +109,7 @@ def handle_team_command(phone: str, message: str) -> bool:
 def download_wati_file(file_url: str) -> bytes:
     """Download a file from WATI media URL."""
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
-    
+
     # Try with requests library (handles redirects better)
     try:
         response = requests.get(
@@ -252,12 +256,12 @@ def webhook():
             # Get file URL — WATI stores it in 'data' field directly
             file_url = None
             if msg_type == 'image':
-                file_url = (data.get('data') or 
-                           (data.get('image') or {}).get('link') or 
+                file_url = (data.get('data') or
+                           (data.get('image') or {}).get('link') or
                            (data.get('image') or {}).get('url'))
             elif msg_type == 'document':
-                file_url = (data.get('data') or 
-                           (data.get('document') or {}).get('link') or 
+                file_url = (data.get('data') or
+                           (data.get('document') or {}).get('link') or
                            (data.get('document') or {}).get('url'))
             print(f"[KITPAK] File URL: {file_url}")
 
@@ -382,16 +386,34 @@ def webhook():
             'content': reply
         })
 
-        # ── Send product images if this is a product enquiry ──
+        # ── Send product images if this is a product enquiry or picture request ──
         images = get_images_from_message(message_text)
+        picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
+        matched_via_history = False
+
+        if not images and picture_requested:
+            # Look back through recent messages for product context
+            for past_msg in reversed(conversation_history[phone][:-1][-6:]):
+                past_product = get_product_key_from_message(past_msg.get('content', ''))
+                if past_product:
+                    images = get_images_for_product(past_product)
+                    matched_via_history = True
+                    break
+
         if images:
             send_product_images(phone, images)
             print(f"[KITPAK] Product images sent to {phone}")
 
-        # ── Send text reply — hide GENERATE_PI line from customer ──
+        # ── Send text reply — hide GENERATE_PI line from customer, override fallback for picture requests ──
         if 'GENERATE_PI:' in reply:
             # Send a clean confirmation message to customer instead of raw GENERATE_PI
             send_whatsapp_message(phone, "Thank you! Generating your invoice now, please wait a moment.")
+        elif images and matched_via_history:
+            # Claude's reply was likely the generic team-handoff fallback (it doesn't know
+            # an image was just sent) — override with a friendly caption instead.
+            friendly_reply = "Here you go! Let me know if you need anything else."
+            send_whatsapp_message(phone, friendly_reply)
+            conversation_history[phone][-1]['content'] = friendly_reply
         else:
             send_whatsapp_message(phone, reply)
         print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
