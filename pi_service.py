@@ -1,6 +1,6 @@
 """
 KITPAK — Proforma Invoice Generator
-Generates a professional PDF PI with UPI QR code.
+Generates a professional PDF PI with UPI QR code, branded with KITPAK colors and logo.
 """
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -15,12 +15,22 @@ import urllib.request, urllib.parse
 W, H = A4
 UPI_ID = os.environ.get('KITPAK_UPI_ID', '9489501487@okbizaxis')
 
+# KITPAK Brand Colors
+DARK_TEAL = "#2C4A52"
+ORANGE = "#F47B20"
+WHITE = "#FFFFFF"
+LIGHT_GRAY = "#F5F6F7"
+MID_GRAY = "#888888"
+DARK_GRAY = "#444444"
+
+# Path to logo — place kitpak_logo.png in the project root
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "kitpak_logo.png")
+
 
 def generate_upi_qr(upi_id, amount, size=150):
     """Generate UPI QR code — tries live API first, falls back to pattern."""
     upi_str = f"upi://pay?pa={upi_id}&pn=SARAVANA+TRADING&am={amount:.2f}&cu=INR"
 
-    # Try live QR API first
     try:
         url = f"https://api.qrserver.com/v1/create-qr-code/?size={size}x{size}&data={urllib.parse.quote(upi_str)}"
         with urllib.request.urlopen(url, timeout=5) as r:
@@ -95,145 +105,204 @@ def generate_pi_pdf(order: dict) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
 
-    # HEADER
-    c.setFillColor(colors.HexColor("#0a1628"))
-    c.rect(0, H-40*mm, W, 40*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#25D366")); c.setFont("Helvetica-Bold", 22)
-    c.drawString(14*mm, H-18*mm, "KITPAK")
-    c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor("#aaaaaa"))
-    c.drawString(14*mm, H-25*mm, "SARAVANA TRADING")
-    c.drawString(14*mm, H-31*mm, "55C, Valayangadu Main Road, Kumar Nagar South")
-    c.drawString(14*mm, H-36*mm, "Tirupur - 641603  |  GSTIN: 33ATTPG0334P2ZD  |  Ph: 83004 75706")
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 13)
-    c.drawRightString(W-14*mm, H-16*mm, "PROFORMA INVOICE")
-    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#aaaaaa"))
-    c.drawRightString(W-14*mm, H-23*mm, f"PI No: {pi_number}")
-    c.drawRightString(W-14*mm, H-29*mm, f"Date: {today.strftime('%d %b %Y')}")
-    c.drawRightString(W-14*mm, H-35*mm, f"Valid Until: {valid_until.strftime('%d %b %Y')}")
+    # ── HEADER ──────────────────────────────────────────────
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.rect(0, H-45*mm, W, 45*mm, fill=1, stroke=0)
 
-    y = H-50*mm
+    # Orange accent bar on left
+    c.setFillColor(colors.HexColor(ORANGE))
+    c.rect(0, H-45*mm, 4*mm, 45*mm, fill=1, stroke=0)
 
-    # FROM
-    c.setFillColor(colors.HexColor("#f8f9fa"))
-    c.rect(14*mm, y-35*mm, 82*mm, 35*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#25D366"))
-    c.rect(14*mm, y-35*mm, 2*mm, 35*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#666666")); c.setFont("Helvetica-Bold", 7)
-    c.drawString(18*mm, y-6*mm, "FROM")
-    c.setFillColor(colors.HexColor("#0a1628")); c.setFont("Helvetica-Bold", 10)
-    c.drawString(18*mm, y-13*mm, "SARAVANA TRADING (KITPAK)")
-    c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor("#444444"))
-    c.drawString(18*mm, y-19*mm, "55C, Valayangadu Main Road")
-    c.drawString(18*mm, y-24*mm, "Kumar Nagar South, Tirupur - 641603")
-    c.drawString(18*mm, y-29*mm, "info@kitpak.in  |  83004 75706")
-    c.drawString(18*mm, y-34*mm, "GSTIN: 33ATTPG0334P2ZD")
+    # Logo image (falls back to text if not found)
+    logo_drawn = False
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = ImageReader(LOGO_PATH)
+            c.drawImage(logo, 10*mm, H-40*mm, 45*mm, 30*mm, preserveAspectRatio=True, mask='auto')
+            logo_drawn = True
+        except Exception:
+            pass
 
-    # TO
-    c.setFillColor(colors.HexColor("#f8f9fa"))
-    c.rect(102*mm, y-35*mm, 94*mm, 35*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#0a1628"))
-    c.rect(102*mm, y-35*mm, 2*mm, 35*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#666666")); c.setFont("Helvetica-Bold", 7)
-    c.drawString(106*mm, y-6*mm, "BILL TO")
-    c.setFillColor(colors.HexColor("#0a1628")); c.setFont("Helvetica-Bold", 10)
-    c.drawString(106*mm, y-13*mm, order['customer_name'])
-    c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor("#444444"))
-    c.drawString(106*mm, y-19*mm, order.get('address',''))
-    c.drawString(106*mm, y-24*mm, f"{order.get('city','')} - {order.get('pincode','')}  |  {order.get('state','')}")
-    c.drawString(106*mm, y-29*mm, f"Ph: {order['phone']}")
-    c.drawString(106*mm, y-34*mm, order.get('gstin') or "GST: Not Applicable")
+    if not logo_drawn:
+        c.setFillColor(colors.HexColor(ORANGE))
+        c.setFont("Helvetica-Bold", 24)
+        c.drawString(10*mm, H-20*mm, "K")
+        c.setFillColor(colors.HexColor(WHITE))
+        c.setFont("Helvetica-Bold", 24)
+        c.drawString(21*mm, H-20*mm, "itpak")
 
-    y -= 42*mm
+    # Company info
+    c.setFont("Helvetica", 7.5)
+    c.setFillColor(colors.HexColor("#aaaaaa"))
+    c.drawString(10*mm, H-36*mm, "SARAVANA TRADING")
+    c.drawString(10*mm, H-41*mm, "55C, Valayangadu Main Road, Kumar Nagar South, Tirupur - 641603")
 
-    # TABLE
-    c.setFillColor(colors.HexColor("#0a1628"))
-    c.rect(14*mm, y-8*mm, W-28*mm, 8*mm, fill=1, stroke=0)
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8)
-    c.drawString(16*mm, y-5.5*mm, "#")
-    c.drawString(24*mm, y-5.5*mm, "DESCRIPTION")
-    c.drawRightString(130*mm, y-5.5*mm, "QTY")
-    c.drawRightString(160*mm, y-5.5*mm, "RATE (Rs.)")
-    c.drawRightString(W-14*mm, y-5.5*mm, "AMOUNT (Rs.)")
+    # PI title on right
+    c.setFillColor(colors.HexColor(WHITE))
+    c.setFont("Helvetica-Bold", 16)
+    c.drawRightString(W-10*mm, H-16*mm, "PROFORMA INVOICE")
+
+    # Orange underline for title
+    c.setStrokeColor(colors.HexColor(ORANGE))
+    c.setLineWidth(1.5)
+    c.line(W-80*mm, H-18*mm, W-10*mm, H-18*mm)
+
+    c.setFont("Helvetica", 8.5)
+    c.setFillColor(colors.HexColor("#cccccc"))
+    c.drawRightString(W-10*mm, H-24*mm, f"PI No: {pi_number}")
+    c.drawRightString(W-10*mm, H-30*mm, f"Date: {today.strftime('%d %b %Y')}")
+    c.drawRightString(W-10*mm, H-36*mm, f"Valid Until: {valid_until.strftime('%d %b %Y')}")
+    c.drawRightString(W-10*mm, H-42*mm, f"GSTIN: 33ATTPG0334P2ZD")
+
+    y = H - 53*mm
+
+    # ── FROM / TO BOXES ───────────────────────────────────────
+    box_h = 36*mm
+
+    # FROM box
+    c.setFillColor(colors.HexColor(LIGHT_GRAY))
+    c.rect(10*mm, y-box_h, 88*mm, box_h, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(ORANGE))
+    c.rect(10*mm, y-box_h, 3*mm, box_h, fill=1, stroke=0)
+
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.setFont("Helvetica-Bold", 7)
+    c.drawString(15*mm, y-6*mm, "FROM")
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(15*mm, y-13*mm, "SARAVANA TRADING (KITPAK)")
+    c.setFont("Helvetica", 8)
+    c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(15*mm, y-19*mm, "55C, Valayangadu Main Road")
+    c.drawString(15*mm, y-24*mm, "Kumar Nagar South, Tirupur - 641603")
+    c.drawString(15*mm, y-29*mm, "info@kitpak.in  |  83004 75706")
+    c.drawString(15*mm, y-34*mm, "GSTIN: 33ATTPG0334P2ZD")
+
+    # TO box
+    c.setFillColor(colors.HexColor(LIGHT_GRAY))
+    c.rect(103*mm, y-box_h, 97*mm, box_h, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.rect(103*mm, y-box_h, 3*mm, box_h, fill=1, stroke=0)
+
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.setFont("Helvetica-Bold", 7)
+    c.drawString(108*mm, y-6*mm, "BILL TO")
+    c.setFont("Helvetica-Bold", 9.5)
+    c.drawString(108*mm, y-13*mm, order['customer_name'])
+    c.setFont("Helvetica", 8)
+    c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(108*mm, y-19*mm, order.get('address', ''))
+    c.drawString(108*mm, y-24*mm, f"{order.get('city','')} - {order.get('pincode','')}  |  {order.get('state','')}")
+    c.drawString(108*mm, y-29*mm, f"Ph: {order['phone']}")
+    c.drawString(108*mm, y-34*mm, order.get('gstin') or "GST: Not Applicable")
+
+    y -= box_h + 6*mm
+
+    # ── TABLE ──────────────────────────────────────────────────
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.rect(10*mm, y-8*mm, W-20*mm, 8*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(WHITE))
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(13*mm, y-5.5*mm, "#")
+    c.drawString(22*mm, y-5.5*mm, "DESCRIPTION")
+    c.drawRightString(128*mm, y-5.5*mm, "QTY")
+    c.drawRightString(158*mm, y-5.5*mm, "RATE (Rs.)")
+    c.drawRightString(W-10*mm, y-5.5*mm, "AMOUNT (Rs.)")
     y -= 8*mm
 
     for i, item in enumerate(order['items']):
         amount = item['qty'] * item['rate']
-        c.setFillColor(colors.white if i%2==0 else colors.HexColor("#f8f9fa"))
-        c.rect(14*mm, y-9*mm, W-28*mm, 9*mm, fill=1, stroke=0)
-        c.setFillColor(colors.HexColor("#666666")); c.setFont("Helvetica", 8)
-        c.drawString(16*mm, y-6*mm, str(i+1))
-        c.setFillColor(colors.black); c.setFont("Helvetica", 8.5)
-        c.drawString(24*mm, y-6*mm, item['desc'][:60])
-        c.drawRightString(130*mm, y-6*mm, str(item['qty']))
-        c.drawRightString(160*mm, y-6*mm, f"{item['rate']:.2f}")
+        bg = colors.white if i % 2 == 0 else colors.HexColor(LIGHT_GRAY)
+        c.setFillColor(bg)
+        c.rect(10*mm, y-9*mm, W-20*mm, 9*mm, fill=1, stroke=0)
+        c.setFillColor(colors.HexColor(MID_GRAY))
+        c.setFont("Helvetica", 8)
+        c.drawString(13*mm, y-6*mm, str(i+1))
+        c.setFillColor(colors.HexColor(DARK_GRAY))
+        c.setFont("Helvetica", 8.5)
+        c.drawString(22*mm, y-6*mm, item['desc'][:65])
+        c.drawRightString(128*mm, y-6*mm, str(item['qty']))
+        c.drawRightString(158*mm, y-6*mm, f"{item['rate']:.2f}")
         c.setFont("Helvetica-Bold", 8.5)
-        c.drawRightString(W-14*mm, y-6*mm, f"{amount:,.2f}")
+        c.setFillColor(colors.HexColor(DARK_TEAL))
+        c.drawRightString(W-10*mm, y-6*mm, f"{amount:,.2f}")
         y -= 9*mm
 
     y -= 4*mm
 
-    # TOTALS
-    c.setFillColor(colors.HexColor("#f8f9fa"))
-    c.rect(120*mm, y-20*mm, W-134*mm, 20*mm, fill=1, stroke=0)
-    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#555555"))
-    c.drawString(122*mm, y-8*mm, "Shipping")
-    c.setFillColor(colors.HexColor("#25D366")); c.setFont("Helvetica-Bold", 9)
-    c.drawRightString(W-14*mm, y-8*mm, "FREE")
-    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#555555"))
-    c.drawString(122*mm, y-16*mm, "GST")
-    c.setFillColor(colors.HexColor("#25D366")); c.setFont("Helvetica-Bold", 9)
-    c.drawRightString(W-14*mm, y-16*mm, "Included")
-    c.setFillColor(colors.HexColor("#0a1628"))
-    c.rect(120*mm, y-30*mm, W-134*mm, 10*mm, fill=1, stroke=0)
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 10)
-    c.drawString(122*mm, y-26*mm, "TOTAL PAYABLE")
-    c.setFillColor(colors.HexColor("#25D366")); c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(W-14*mm, y-26*mm, f"Rs. {total:,.2f}")
+    # Totals
+    c.setFillColor(colors.HexColor(LIGHT_GRAY))
+    c.rect(118*mm, y-22*mm, W-128*mm, 22*mm, fill=1, stroke=0)
+    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(121*mm, y-8*mm, "Shipping")
+    c.setFillColor(colors.HexColor(ORANGE)); c.setFont("Helvetica-Bold", 9)
+    c.drawRightString(W-10*mm, y-8*mm, "FREE")
+    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(121*mm, y-16*mm, "GST")
+    c.setFillColor(colors.HexColor(ORANGE)); c.setFont("Helvetica-Bold", 9)
+    c.drawRightString(W-10*mm, y-16*mm, "Included")
 
-    y -= 38*mm
+    # Total box
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.rect(118*mm, y-32*mm, W-128*mm, 10*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(WHITE)); c.setFont("Helvetica-Bold", 10)
+    c.drawString(121*mm, y-28*mm, "TOTAL PAYABLE")
+    c.setFillColor(colors.HexColor(ORANGE)); c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(W-10*mm, y-28*mm, f"Rs. {total:,.2f}")
 
-    # PAYMENT
-    c.setFillColor(colors.HexColor("#f0fff4"))
-    c.rect(14*mm, y-44*mm, W-28*mm, 44*mm, fill=1, stroke=0)
-    c.setStrokeColor(colors.HexColor("#25D366")); c.setLineWidth(1)
-    c.rect(14*mm, y-44*mm, W-28*mm, 44*mm, fill=0, stroke=1)
-    c.setFillColor(colors.HexColor("#0a1628")); c.setFont("Helvetica-Bold", 9)
-    c.drawString(18*mm, y-7*mm, "PAYMENT DETAILS")
-    c.setFont("Helvetica", 8.5); c.setFillColor(colors.HexColor("#444444"))
-    c.drawString(18*mm, y-14*mm, "Pay via UPI: GPay / PhonePe / Paytm / BHIM")
-    c.setFont("Helvetica-Bold", 13); c.setFillColor(colors.HexColor("#25D366"))
-    c.drawString(18*mm, y-22*mm, UPI_ID)
-    c.setFont("Helvetica-Bold", 10); c.setFillColor(colors.HexColor("#0a1628"))
-    c.drawString(18*mm, y-30*mm, f"Amount: Rs. {total:,.2f}")
-    c.setFont("Helvetica", 7.5); c.setFillColor(colors.HexColor("#888888"))
-    c.drawString(18*mm, y-37*mm, "After payment, share the UTR/transaction ID to confirm your order.")
-    c.drawString(18*mm, y-43*mm, "Scan QR code with any UPI app to pay instantly.")
+    y -= 40*mm
 
-    # QR
+    # ── PAYMENT SECTION ──────────────────────────────────────────
+    c.setFillColor(colors.HexColor("#EEF7F0"))
+    c.rect(10*mm, y-46*mm, W-20*mm, 46*mm, fill=1, stroke=0)
+    c.setStrokeColor(colors.HexColor(ORANGE))
+    c.setLineWidth(1.5)
+    c.rect(10*mm, y-46*mm, W-20*mm, 46*mm, fill=0, stroke=1)
+
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(15*mm, y-8*mm, "PAYMENT DETAILS")
+    c.setStrokeColor(colors.HexColor(ORANGE))
+    c.setLineWidth(1)
+    c.line(15*mm, y-10*mm, 70*mm, y-10*mm)
+
+    c.setFont("Helvetica", 8.5); c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(15*mm, y-17*mm, "Pay via UPI: GPay / PhonePe / Paytm / BHIM")
+    c.setFont("Helvetica-Bold", 14); c.setFillColor(colors.HexColor(ORANGE))
+    c.drawString(15*mm, y-26*mm, UPI_ID)
+    c.setFont("Helvetica-Bold", 11); c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.drawString(15*mm, y-34*mm, f"Amount: Rs. {total:,.2f}")
+    c.setFont("Helvetica", 7.5); c.setFillColor(colors.HexColor(MID_GRAY))
+    c.drawString(15*mm, y-40*mm, "After payment, share the UTR / transaction screenshot to confirm your order.")
+    c.drawString(15*mm, y-45*mm, "Scan QR code with any UPI app to pay instantly.")
+
+    # QR code
     qr_buf = generate_upi_qr(UPI_ID, total)
     qr_img = ImageReader(qr_buf)
-    c.drawImage(qr_img, W-56*mm, y-44*mm, 38*mm, 38*mm)
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.HexColor("#25D366"))
-    c.drawCentredString(W-37*mm, y-46*mm, "Scan to Pay")
+    c.drawImage(qr_img, W-58*mm, y-46*mm, 42*mm, 42*mm)
+    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.HexColor(ORANGE))
+    c.drawCentredString(W-37*mm, y-48*mm, "Scan to Pay")
 
-    y -= 52*mm
+    y -= 54*mm
 
-    # NOTE
-    c.setFillColor(colors.HexColor("#fff8e1"))
-    c.rect(14*mm, y-14*mm, W-28*mm, 14*mm, fill=1, stroke=0)
-    c.setStrokeColor(colors.HexColor("#ffc107")); c.setLineWidth(2)
-    c.line(14*mm, y-14*mm, 14*mm, y)
-    c.setFillColor(colors.HexColor("#444444")); c.setFont("Helvetica-Bold", 8)
-    c.drawString(18*mm, y-5*mm, "Note:")
-    c.setFont("Helvetica", 8)
-    c.drawString(30*mm, y-5*mm, "Payment via UPI only. Order dispatched within 2-3 business days after payment confirmation.")
-    c.drawString(18*mm, y-11*mm, "This is a computer generated document.")
+    # ── NOTE ────────────────────────────────────────────────────
+    c.setFillColor(colors.HexColor("#FFF8E1"))
+    c.rect(10*mm, y-18*mm, W-20*mm, 18*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(ORANGE))
+    c.rect(10*mm, y-18*mm, 3*mm, 18*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(DARK_TEAL)); c.setFont("Helvetica-Bold", 8)
+    c.drawString(15*mm, y-6*mm, "Note:")
+    c.setFont("Helvetica", 8); c.setFillColor(colors.HexColor(DARK_GRAY))
+    c.drawString(30*mm, y-6*mm, "Payment via UPI only. Custom printed covers take 10-14 days for delivery,")
+    c.drawString(15*mm, y-12*mm, "other products dispatched on the same day if ordered before 6 PM.")
+    c.drawString(15*mm, y-17*mm, "This is a computer generated document.")
 
-    # FOOTER
-    c.setFillColor(colors.HexColor("#0a1628"))
-    c.rect(0, 0, W, 12*mm, fill=1, stroke=0)
-    c.setFillColor(colors.HexColor("#888888")); c.setFont("Helvetica", 7.5)
-    c.drawCentredString(W/2, 4*mm, "KITPAK.IN  |  info@kitpak.in  |  83004 75706  |  SARAVANA TRADING, Tirupur - 641603")
+    # ── FOOTER ──────────────────────────────────────────────────
+    c.setFillColor(colors.HexColor(DARK_TEAL))
+    c.rect(0, 0, W, 13*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor(ORANGE))
+    c.rect(0, 0, W, 1.5*mm, fill=1, stroke=0)
+    c.setFillColor(colors.HexColor("#aaaaaa")); c.setFont("Helvetica", 7.5)
+    c.drawCentredString(W/2, 5*mm, "KITPAK.IN  |  info@kitpak.in  |  83004 75706  |  SARAVANA TRADING, Tirupur - 641603")
 
     c.save()
     buf.seek(0)
@@ -263,6 +332,9 @@ def generate_pi_text(order: dict) -> str:
         "",
         f"Pay via UPI: {UPI_ID}",
         "Share UTR after payment to confirm order.",
+        "",
+        "Note: Custom printed covers take 10-14 days for delivery,",
+        "other products dispatched same day if ordered before 6 PM.",
         "",
         "KITPAK | info@kitpak.in | 83004 75706"
     ]
