@@ -281,3 +281,50 @@ def extract_order_details(reply: str) -> dict:
     except Exception as e:
         print(f"[KITPAK] Order extraction error: {e}")
     return None
+
+
+def extract_payment_info(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+    """
+    Use Claude vision to extract amount and UPI ID from a payment screenshot.
+    Returns: {"amount": float or None, "upi_id": str or None, "status": str}
+    """
+    import base64
+    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+    try:
+        image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime_type,
+                            "data": image_data
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "This is a payment screenshot. Extract the following details and "
+                            "respond ONLY with valid JSON, no other text:\n"
+                            '{"amount": <number or null>, "upi_id": "<recipient UPI ID or null>", '
+                            '"status": "<success/pending/failed/unclear>"}\n'
+                            "amount should be the total transaction amount in rupees as a number. "
+                            "upi_id is the receiver's UPI ID if visible (e.g. xxxx@xxxx). "
+                            "status reflects whether the payment shows as successful, pending, failed, or unclear."
+                        )
+                    }
+                ]
+            }]
+        )
+        text = response.content[0].text.strip()
+        # Remove markdown code fences if present
+        text = re.sub(r'^```json\s*|```\s*$', '', text, flags=re.MULTILINE).strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"[KITPAK] Payment info extraction error: {e}")
+        return {"amount": None, "upi_id": None, "status": "unclear"}
