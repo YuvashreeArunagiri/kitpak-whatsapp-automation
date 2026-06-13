@@ -217,6 +217,17 @@ def webhook():
         if event_type != 'message':
             return jsonify({'status': 'ignored'}), 200
 
+        # ── Ignore stale/replayed messages (older than 2 minutes) ──
+        msg_timestamp = data.get('timestamp')
+        if msg_timestamp:
+            try:
+                age_seconds = time.time() - int(msg_timestamp)
+                if age_seconds > 120:
+                    print(f"[KITPAK] Ignoring stale message (age {int(age_seconds)}s): {data.get('text')}")
+                    return jsonify({'status': 'ignored_stale'}), 200
+            except (ValueError, TypeError):
+                pass
+
         # ── Deduplicate — ignore already processed message IDs ──
         message_id = data.get('id', '') or data.get('whatsappMessageId', '')
         if message_id and message_id in processed_message_ids:
