@@ -1,39 +1,32 @@
 """
 KITPAK — Google Sheets Daily Report Service
 Sends a daily summary of orders and enquiries to Google Sheets at 6 PM.
+Uses OAuth refresh token stored in GOOGLE_TOKEN environment variable.
 """
 
 import os
 import json
 from datetime import datetime
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SHEET_ID = '1MTTNafD-WyWsvQrRw0seRGqtO35E25O2s91m5yVDN8I'
-TOKEN_FILE = 'google_token.json'
-CREDENTIALS_FILE = 'google_credentials.json'
 
 
 def get_sheets_service():
-    """Authenticate and return Google Sheets service."""
-    creds = None
+    """Authenticate using token stored in GOOGLE_TOKEN env var and return Sheets service."""
+    token_json = os.environ.get('GOOGLE_TOKEN')
+    if not token_json:
+        raise Exception("GOOGLE_TOKEN environment variable not set")
 
-    # Load existing token
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    token_data = json.loads(token_json)
+    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
 
-    # Refresh or re-authenticate
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
 
     return build('sheets', 'v4', credentials=creds)
 
@@ -49,7 +42,6 @@ def append_daily_report(conversation_history: dict):
         today = datetime.now().strftime('%d %b %Y')
         now = datetime.now().strftime('%I:%M %p')
 
-        # Count stats from conversation history
         total_conversations = len(conversation_history)
         orders_placed = 0
         enquiries = 0
@@ -61,10 +53,8 @@ def append_daily_report(conversation_history: dict):
             else:
                 enquiries += 1
 
-        # Prepare row
         row = [today, now, total_conversations, orders_placed, enquiries, '']
 
-        # Check if header exists, add if not
         result = sheet.values().get(spreadsheetId=SHEET_ID, range='Sheet1!A1:F1').execute()
         values = result.get('values', [])
         if not values:
@@ -76,7 +66,6 @@ def append_daily_report(conversation_history: dict):
                 body={'values': header}
             ).execute()
 
-        # Append data row
         sheet.values().append(
             spreadsheetId=SHEET_ID,
             range='Sheet1!A:F',
@@ -118,11 +107,10 @@ def append_order_to_sheet(phone: str, order: dict):
             'Pending Payment'
         ]
 
-        # Check/add header for Orders sheet
         try:
             result = sheet.values().get(spreadsheetId=SHEET_ID, range='Orders!A1:J1').execute()
             values = result.get('values', [])
-        except:
+        except Exception:
             values = []
 
         if not values:
