@@ -480,7 +480,10 @@ def sheet_notify():
             return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
 
         msg_type = data.get('type')
-        phone = (data.get('phone') or '').strip().replace('+', '').replace(' ', '')
+        phone = str(data.get('phone') or '').strip().replace('+', '').replace(' ', '')
+        # Sheets may send phone numbers as floats (e.g. "919876543210.0")
+        if phone.endswith('.0'):
+            phone = phone[:-2]
         if not phone:
             return jsonify({'status': 'error', 'message': 'missing phone'}), 400
         if not phone.startswith('91'):
