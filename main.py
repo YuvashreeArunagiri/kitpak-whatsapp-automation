@@ -7,7 +7,7 @@ import json
 import base64
 import urllib.request
 from dotenv import load_dotenv
-from claude_service import get_claude_reply, extract_order_details, classify_image
+from claude_service import get_claude_reply, extract_order_details, classify_image, extract_payment_info
 from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message
@@ -22,6 +22,7 @@ app = Flask(__name__)
 
 conversation_history = {}
 processed_message_ids = set()  # Track processed message IDs to prevent duplicates
+pending_orders = {}  # phone -> {'total': amount, 'pi_number': str} — set when PI is generated
 
 def daily_report_scheduler():
     """Background thread — sends daily report to Google Sheets at 6 PM."""
@@ -42,6 +43,7 @@ pending_logo = {}        # phone -> logo bytes (waiting for bag colour confirmat
 custom_order_state = {}  # phone -> {colour, size, qty}
 
 OWNER_NUMBER = "918300475706"
+KITPAK_UPI_ID = os.environ.get("KITPAK_UPI_ID", "9489501487@okbizaxis")
 
 
 # ─── Team keyword commands ───────────────────────────────────
@@ -310,11 +312,42 @@ def webhook():
                     send_whatsapp_message(phone,
                         "Thank you! We have received your payment screenshot. "
                         "Our team will verify and confirm your order shortly.")
+
                     sender_name = data.get('senderName', phone)
-                    send_whatsapp_message(OWNER_NUMBER,
+
+                    # Verify payment amount against expected order total
+                    payment_info = extract_payment_info(file_bytes, mime_type)
+                    extracted_amount = payment_info.get('amount')
+                    extracted_upi = payment_info.get('upi_id')
+                    pay_status = payment_info.get('status', 'unclear')
+                    expected_total = pending_orders.get(phone, {}).get('total')
+
+                    warning_lines = []
+                    if expected_total is not None and extracted_amount is not None:
+                        if abs(float(extracted_amount) - float(expected_total)) > 0.5:
+                            warning_lines.append(f"AMOUNT MISMATCH: Expected Rs.{expected_total:,.2f} but screenshot shows Rs.{extracted_amount:,.2f}")
+                    if extracted_upi and KITPAK_UPI_ID not in extracted_upi and extracted_upi not in KITPAK_UPI_ID:
+                        warning_lines.append(f"UPI ID MISMATCH: Payment appears to be sent to {extracted_upi}, not our UPI ID")
+                    if pay_status in ['failed', 'pending']:
+                        warning_lines.append(f"PAYMENT STATUS: Screenshot shows '{pay_status}' — may not be a successful payment")
+                    if extracted_amount is None and pay_status == 'unclear':
+                        warning_lines.append("Could not read payment details from screenshot — please verify manually")
+
+                    alert_msg = (
                         f"Payment screenshot received from {sender_name} ({phone}).\n"
-                        f"Please verify and reply:\n"
-                        f"CONFIRM {phone[-10:]}")
+                        f"Detected amount: Rs.{extracted_amount if extracted_amount is not None else 'Not detected'}\n"
+                        f"Expected amount: Rs.{expected_total:,.2f}\n" if expected_total is not None else
+                        f"Payment screenshot received from {sender_name} ({phone}).\n"
+                        f"Detected amount: Rs.{extracted_amount if extracted_amount is not None else 'Not detected'}\n"
+                    )
+
+                    if warning_lines:
+                        alert_msg += "\n⚠️ WARNING:\n" + "\n".join(warning_lines) + "\n"
+                        alert_msg += f"\nPlease verify carefully before confirming.\nCONFIRM {phone[-10:]}"
+                    else:
+                        alert_msg += f"\nLooks OK. Please verify and reply:\nCONFIRM {phone[-10:]}"
+
+                    send_whatsapp_message(OWNER_NUMBER, alert_msg)
 
             else:
                 send_whatsapp_message(phone, "I had trouble opening that file. Could you please send it again?")
@@ -373,6 +406,11 @@ def webhook():
                         filename="KITPAK_ProformaInvoice.pdf",
                         caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
                     )
+                    # Store order total for payment verification later
+                    order_total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
+                    pending_orders[phone] = {'total': order_total}
+                    print(f"[KITPAK] Pending order total for {phone}: Rs.{order_total}")
+
                     # Log order to Google Sheets
                     try:
                         append_order_to_sheet(phone, order)
