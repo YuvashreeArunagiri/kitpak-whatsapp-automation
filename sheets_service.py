@@ -55,19 +55,20 @@ def append_order_to_sheet(phone: str, order: dict) -> bool:
 def append_handoff_to_sheet(phone: str, customer_name: str, reason: str, last_message: str) -> bool:
     """
     Logs a team-handoff conversation to the HandoffConversations sheet.
-    Called whenever Claude replies with 'Our team will get in touch' or similar.
+    Columns: Date | Customer Phone | Customer Name | Reason | Last Message | Status | Notes
     """
     now = datetime.now().strftime('%d %b %Y %I:%M %p')
     return _post_to_sheet(
         sheet_name="HandoffConversations",
-        header=["Date", "Customer Phone", "Customer Name", "Reason", "Last Message", "Status"],
+        header=["Date", "Customer Phone", "Customer Name", "Reason", "Last Message", "Status", "Notes"],
         row=[
             now,
             phone,
             customer_name or '',
             reason,
-            last_message[:200] if last_message else '',  # cap at 200 chars
-            'Pending Follow-up'
+            last_message[:200] if last_message else '',
+            'Pending Follow-up',
+            ''
         ]
     )
 
@@ -75,12 +76,12 @@ def append_handoff_to_sheet(phone: str, customer_name: str, reason: str, last_me
 def append_bulk_enquiry_to_sheet(phone: str, customer_name: str, product: str, quantity: str, state: str, reason: str) -> bool:
     """
     Logs a bulk enquiry to the BulkEnquiries sheet.
-    Called when conversation contains 5000+ quantity or custom print above 1000 pcs.
+    Columns: Date | Customer Phone | Customer Name | Product Interest | Quantity | State | Reason | Status | Notes
     """
     now = datetime.now().strftime('%d %b %Y %I:%M %p')
     return _post_to_sheet(
         sheet_name="BulkEnquiries",
-        header=["Date", "Customer Phone", "Customer Name", "Product Interest", "Quantity", "State", "Reason", "Status"],
+        header=["Date", "Customer Phone", "Customer Name", "Product Interest", "Quantity", "State", "Reason", "Status", "Notes"],
         row=[
             now,
             phone,
@@ -89,7 +90,8 @@ def append_bulk_enquiry_to_sheet(phone: str, customer_name: str, product: str, q
             quantity or 'Not specified',
             state or 'Not specified',
             reason,
-            'Pending Follow-up'
+            'Pending Follow-up',
+            ''
         ]
     )
 
