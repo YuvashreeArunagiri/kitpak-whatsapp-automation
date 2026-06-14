@@ -1,7 +1,7 @@
 import requests
 import os
 
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/YuvashreeArunagiri/kitpak-whatsapp-automation/main"
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/YuvashreeArunagiri/kitpak-whatsapp-automation/main/images"
 
 def send_whatsapp_message(phone: str, message: str) -> bool:
     wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
