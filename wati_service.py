@@ -61,9 +61,9 @@ def send_whatsapp_message(phone: str, message: str) -> bool:
 
 def send_whatsapp_template(phone: str, template_name: str, parameters: list) -> bool:
     """
-    Send a WhatsApp approved template message via WATI.
-    parameters: list of strings, one per {{n}} placeholder in the template body.
+    Send an approved WhatsApp template message via WATI.
     Works outside the 24-hour session window.
+    parameters: list of strings, one per {{n}} placeholder in the template body.
     """
     wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
@@ -160,11 +160,11 @@ def send_product_images(phone: str, image_filenames: list, caption: str = "") ->
     if not image_filenames:
         return False
     sent = False
-    for filename in image_filenames[:2]:  # max 2 images
+    for filename in image_filenames[:2]:
         result = send_whatsapp_image(phone, filename, caption)
         if result:
             sent = True
-        caption = ""  # caption only on first image
+        caption = ""
     return sent
 
 
@@ -184,9 +184,7 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
     else:
         mime_type = 'application/pdf'
 
-    headers = {
-        'Authorization': f'Bearer {wati_api_token}',
-    }
+    headers = {'Authorization': f'Bearer {wati_api_token}'}
 
     # Method 1 — multipart upload
     try:
