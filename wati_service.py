@@ -3,6 +3,7 @@ import os
 
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/YuvashreeArunagiri/kitpak-whatsapp-automation/main/images"
 
+
 def send_whatsapp_message(phone: str, message: str) -> bool:
     wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
@@ -55,6 +56,52 @@ def send_whatsapp_message(phone: str, message: str) -> bool:
     except Exception as e:
         print(f"[KITPAK] Method 3 error: {e}")
     print(f"[KITPAK] All methods failed for {phone}")
+    return False
+
+
+def send_whatsapp_template(phone: str, template_name: str, parameters: list) -> bool:
+    """
+    Send a WhatsApp approved template message via WATI.
+    parameters: list of strings, one per {{n}} placeholder in the template body.
+    Works outside the 24-hour session window.
+    """
+    wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
+    wati_api_token = os.environ.get('WATI_API_TOKEN', '')
+    if not wati_api_url or not wati_api_token:
+        print("[KITPAK] WATI credentials missing")
+        return False
+
+    headers = {
+        'Authorization': f'Bearer {wati_api_token}',
+        'Content-Type': 'application/json'
+    }
+
+    # Build parameter list in WATI format
+    wati_params = [{"name": str(i + 1), "value": str(p)} for i, p in enumerate(parameters)]
+
+    payload = {
+        "template_name": template_name,
+        "broadcast_name": template_name,
+        "parameters": wati_params
+    }
+
+    try:
+        url = f"{wati_api_url}/api/v1/sendTemplateMessage/{phone}"
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        print(f"[KITPAK] Template '{template_name}' response: {response.status_code} - {response.text[:300]}")
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('result') in [True, 'success'] or result.get('ok') == True:
+                print(f"[KITPAK] Template message sent to {phone}")
+                return True
+            # Some WATI versions return 200 even on success without result=True
+            if 'error' not in response.text.lower() and 'fail' not in response.text.lower():
+                print(f"[KITPAK] Template likely sent to {phone}")
+                return True
+    except Exception as e:
+        print(f"[KITPAK] Template send error: {e}")
+
+    print(f"[KITPAK] Template send failed for {phone}")
     return False
 
 
@@ -129,7 +176,6 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
         print("[KITPAK] WATI credentials missing")
         return False
 
-    # Detect mime type from filename
     fn_lower = filename.lower()
     if fn_lower.endswith('.png'):
         mime_type = 'image/png'
@@ -145,9 +191,7 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
     # Method 1 — multipart upload
     try:
         url = f"{wati_api_url}/api/v1/sendSessionFile/{phone}"
-        files = {
-            'file': (filename, pdf_bytes, mime_type)
-        }
+        files = {'file': (filename, pdf_bytes, mime_type)}
         data = {'caption': caption} if caption else {}
         response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
         print(f"[KITPAK] PDF send response: {response.status_code} - {response.text[:200]}")
@@ -160,9 +204,7 @@ def send_whatsapp_pdf(phone: str, pdf_bytes: bytes, filename: str = "KITPAK_PI.p
     # Method 2 — sendFile endpoint
     try:
         url = f"{wati_api_url}/api/v1/sendFile/{phone}"
-        files = {
-            'file': (filename, pdf_bytes, mime_type)
-        }
+        files = {'file': (filename, pdf_bytes, mime_type)}
         data = {'caption': caption} if caption else {}
         response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
         print(f"[KITPAK] PDF method 2 response: {response.status_code} - {response.text[:200]}")
