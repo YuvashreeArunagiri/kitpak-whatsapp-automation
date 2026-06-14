@@ -106,7 +106,7 @@ def send_whatsapp_template(phone: str, template_name: str, parameters: list) -> 
 
 
 def send_whatsapp_image(phone: str, image_filename: str, caption: str = "") -> bool:
-    """Send an image from GitHub raw URL via WATI."""
+    """Download image from GitHub and send to customer via WATI multipart upload."""
     wati_api_url   = os.environ.get('WATI_API_URL', '').rstrip('/')
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
     if not wati_api_url or not wati_api_token:
@@ -114,36 +114,42 @@ def send_whatsapp_image(phone: str, image_filename: str, caption: str = "") -> b
         return False
 
     image_url = f"{GITHUB_RAW_BASE}/{image_filename}"
-    headers = {
-        'Authorization': f'Bearer {wati_api_token}',
-        'Content-Type': 'application/json'
-    }
+    mime_type = "image/jpeg" if image_filename.endswith(('.jpg', '.jpeg')) else "image/png"
 
-    # Method 1 — sendSessionFile
+    # Download image from GitHub first
+    try:
+        img_response = requests.get(image_url, timeout=15)
+        if img_response.status_code != 200:
+            print(f"[KITPAK] Image download failed: {img_response.status_code} for {image_url}")
+            return False
+        image_bytes = img_response.content
+    except Exception as e:
+        print(f"[KITPAK] Image download error: {e}")
+        return False
+
+    headers = {'Authorization': f'Bearer {wati_api_token}'}
+
+    # Method 1 — multipart upload via sendSessionFile
     try:
         url = f"{wati_api_url}/api/v1/sendSessionFile/{phone}"
-        payload = {
-            "url": image_url,
-            "caption": caption,
-            "mimeType": "image/jpeg" if image_filename.endswith(('.jpg', '.jpeg')) else "image/png"
-        }
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        files = {'file': (image_filename, image_bytes, mime_type)}
+        data = {'caption': caption} if caption else {}
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
         print(f"[KITPAK] Image send response: {response.status_code} - {response.text[:200]}")
         if response.status_code == 200:
-            print(f"[KITPAK] Image sent to {phone}: {image_filename}")
-            return True
+            result = response.json()
+            if result.get('result') != False:
+                print(f"[KITPAK] Image sent to {phone}: {image_filename}")
+                return True
     except Exception as e:
         print(f"[KITPAK] Image send error: {e}")
 
-    # Method 2 — sendMedia
+    # Method 2 — sendFile endpoint
     try:
-        url = f"{wati_api_url}/api/v1/sendMedia/{phone}"
-        payload = {
-            "mediaUrl": image_url,
-            "caption": caption,
-            "type": "image"
-        }
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        url = f"{wati_api_url}/api/v1/sendFile/{phone}"
+        files = {'file': (image_filename, image_bytes, mime_type)}
+        data = {'caption': caption} if caption else {}
+        response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
         print(f"[KITPAK] Image method 2 response: {response.status_code} - {response.text[:200]}")
         if response.status_code == 200:
             print(f"[KITPAK] Image sent via method 2 to {phone}")
@@ -151,7 +157,7 @@ def send_whatsapp_image(phone: str, image_filename: str, caption: str = "") -> b
     except Exception as e:
         print(f"[KITPAK] Image method 2 error: {e}")
 
-    print(f"[KITPAK] Image send failed for {phone}")
+    print(f"[KITPAK] Image send failed for {phone}: {image_filename}")
     return False
 
 
