@@ -1,6 +1,6 @@
 # image_service.py
 # KITPAK — Product image catalogue
-# Maps product categories to reference image filenames in 
+# Maps product categories to reference image filenames in images/ folder
 
 PRODUCT_IMAGES = {
 
@@ -95,38 +95,171 @@ PRODUCT_IMAGES = {
     ],
 }
 
-# Keyword mapping — used to match customer messages to product image sets
+# Keyword mapping — comprehensive, covers all common customer phrasings
 KEYWORD_MAP = {
+    # ── White courier covers ──
     "white cover": "white_cover",
     "white courier": "white_cover",
+    "white bag": "white_cover",
+    "white mailer": "white_cover",
     "plain cover": "white_cover",
+    "plain white": "white_cover",
+    "courier cover": "white_cover",
+    "courier bag": "white_cover",
+    "mailer bag": "white_cover",
+    "mailer cover": "white_cover",
+    "packing cover": "white_cover",
+    "packing bag": "white_cover",
+    "shipping cover": "white_cover",
+    "shipping bag": "white_cover",
+    "dispatch cover": "white_cover",
+    "dispatch bag": "white_cover",
+    "poly bag": "white_cover",
+    "polybag": "white_cover",
+    "flap cover": "white_cover",
+    "d2c bag": "white_cover",
+    "ecommerce bag": "white_cover",
+    "e-commerce bag": "white_cover",
+    "delivery bag": "white_cover",
+    "delivery cover": "white_cover",
+    "tamper proof": "white_cover",
+    "tamper evident": "white_cover",
+
+    # ── Colour covers ──
     "black cover": "colour_cover_black",
+    "black bag": "colour_cover_black",
+    "black courier": "colour_cover_black",
+    "black mailer": "colour_cover_black",
     "pink cover": "colour_cover_pink",
+    "pink bag": "colour_cover_pink",
+    "pink courier": "colour_cover_pink",
+    "pink mailer": "colour_cover_pink",
     "purple cover": "colour_cover_purple",
+    "purple bag": "colour_cover_purple",
+    "purple courier": "colour_cover_purple",
+    "purple mailer": "colour_cover_purple",
     "colour cover": "colour_cover",
     "color cover": "colour_cover",
+    "coloured cover": "colour_cover",
+    "colored cover": "colour_cover",
+    "colour bag": "colour_cover",
+    "color bag": "colour_cover",
+    "coloured bag": "colour_cover",
+    "colored bag": "colour_cover",
+    "colour mailer": "colour_cover",
+    "color mailer": "colour_cover",
+
+    # ── Custom printed white ──
     "custom printed white": "custom_printed_white",
     "custom white": "custom_printed_white",
+    "printed white cover": "custom_printed_white",
+    "printed cover": "custom_printed_white",
+    "custom print": "custom_printed_white",
+    "custom printing": "custom_printed_white",
+    "logo cover": "custom_printed_white",
+    "logo bag": "custom_printed_white",
+    "logo printed": "custom_printed_white",
+    "brand cover": "custom_printed_white",
+    "brand bag": "custom_printed_white",
+    "branded cover": "custom_printed_white",
+    "branded bag": "custom_printed_white",
+    "design cover": "custom_printed_white",
+    "design bag": "custom_printed_white",
+
+    # ── Custom printed colour ──
     "custom printed colour": "custom_printed_colour",
     "custom printed color": "custom_printed_colour",
     "custom colour": "custom_printed_colour",
     "custom color": "custom_printed_colour",
-    "printed cover": "custom_printed_white",
+    "printed colour": "custom_printed_colour",
+    "printed color": "custom_printed_colour",
+    "custom black": "custom_printed_colour",
+    "custom pink": "custom_printed_colour",
+    "custom purple": "custom_printed_colour",
+
+    # ── Transparent covers ──
     "transparent": "transparent_cover",
+    "transparent cover": "transparent_cover",
+    "transparent bag": "transparent_cover",
+    "clear cover": "transparent_cover",
+    "clear bag": "transparent_cover",
+    "polythene": "transparent_cover",
+    "poly cover": "transparent_cover",
+
+    # ── Meesho ──
     "meesho": "meesho_cover",
+    "meesho cover": "meesho_cover",
+    "meesho bag": "meesho_cover",
+
+    # ── Amazon ──
     "amazon": "amazon_cover",
+    "amazon cover": "amazon_cover",
+    "amazon bag": "amazon_cover",
+    "amazon mailer": "amazon_cover",
+
+    # ── Flipkart ──
     "flipkart": "flipkart_cover",
+    "flipkart cover": "flipkart_cover",
+    "flipkart bag": "flipkart_cover",
+
+    # ── Paper / Kraft bags ──
     "paper bag": "paper_bag_kraft",
     "kraft": "paper_bag_kraft",
+    "kraft bag": "paper_bag_kraft",
+    "kraft paper": "paper_bag_kraft",
+    "paper cover": "paper_bag_kraft",
+    "brown bag": "paper_bag_kraft",
+    "brown paper": "paper_bag_kraft",
+    "eco bag": "paper_bag_kraft",
+    "eco friendly bag": "paper_bag_kraft",
+    "grocery bag": "paper_bag_kraft",
+    "shopping bag": "paper_bag_kraft",
+
+    # ── Honeycomb roll ──
     "honeycomb roll": "honeycomb_roll",
+    "honeycomb paper": "honeycomb_roll",
     "honeycomb paper roll": "honeycomb_roll",
+    "honeycomb wrap": "honeycomb_roll",
+    "honeycomb wrapping": "honeycomb_roll",
+    "bubble wrap alternative": "honeycomb_roll",
+
+    # ── Honeycomb sleeve ──
     "honeycomb sleeve": "honeycomb_sleeve",
+    "honeycomb sleeves": "honeycomb_sleeve",
+    "bottle sleeve": "honeycomb_sleeve",
+    "glass sleeve": "honeycomb_sleeve",
+
+    # ── Thermal label roll ──
     "thermal label roll": "thermal_label_roll",
     "thermal roll": "thermal_label_roll",
     "label roll": "thermal_label_roll",
+    "thermal label": "thermal_label_roll",
+    "shipping label": "thermal_label_roll",
+    "label": "thermal_label_roll",
+    "labels": "thermal_label_roll",
+    "order label": "thermal_label_roll",
+    "order slip": "thermal_label_roll",
+    "packing slip": "thermal_label_roll",
+    "dispatch label": "thermal_label_roll",
+    "barcode label": "thermal_label_roll",
+    "barcode sticker": "thermal_label_roll",
+    "sticker label": "thermal_label_roll",
+    "address label": "thermal_label_roll",
+    "waybill": "thermal_label_roll",
+    "way bill": "thermal_label_roll",
+    "printing label": "thermal_label_roll",
+    "print label": "thermal_label_roll",
+    "courier label": "thermal_label_roll",
+    "100x150": "thermal_label_roll",
+    "4x6 label": "thermal_label_roll",
+
+    # ── Thermal label A4 ──
     "thermal label a4": "thermal_label_a4",
     "a4 label": "thermal_label_a4",
     "4 cut": "thermal_label_a4",
+    "a4 sheet": "thermal_label_a4",
+    "label sheet": "thermal_label_a4",
+    "a4 sticker": "thermal_label_a4",
 }
 
 
@@ -136,11 +269,14 @@ def get_images_for_product(product_key: str) -> list:
 
 
 def get_product_key_from_message(message: str) -> str | None:
-    """Match a customer message to a product image key."""
+    """Match a customer message to a product image key.
+    Tries longer keywords first to avoid partial matches."""
     message_lower = message.lower()
-    for keyword, product_key in KEYWORD_MAP.items():
+    # Sort by keyword length descending — longer/more specific matches first
+    sorted_keywords = sorted(KEYWORD_MAP.keys(), key=len, reverse=True)
+    for keyword in sorted_keywords:
         if keyword in message_lower:
-            return product_key
+            return KEYWORD_MAP[keyword]
     return None
 
 
