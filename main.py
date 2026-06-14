@@ -135,15 +135,22 @@ def is_bulk_enquiry(phone: str, message_text: str, reply: str) -> tuple:
     """
     full_history = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])]).lower()
 
-    # Check for large quantities
-    qty_match = re.search(r'(\d[\d,]*)\s*(pcs|pieces|nos|units)', full_history)
-    if qty_match:
-        try:
-            qty = int(qty_match.group(1).replace(',', ''))
-            if qty >= 5000:
-                return True, f"Bulk quantity: {qty} pcs"
-        except ValueError:
-            pass
+    # Check for quantities — with or without unit suffix
+    is_custom = 'custom' in full_history and ('printed' in full_history or 'print' in full_history)
+    qty_patterns = [
+        r'(\d[\d,]*)\s*(pcs|pieces|nos|units|covers|bags|rolls|sleeves)',
+        r'(\d{4,})',
+    ]
+    for pattern in qty_patterns:
+        for match in re.finditer(pattern, full_history):
+            try:
+                qty = int(match.group(1).replace(',', ''))
+                if qty > 5000:
+                    return True, f"Bulk quantity: {qty} pcs"
+                if is_custom and qty > 1000:
+                    return True, f"Custom print bulk order: {qty} pcs"
+            except ValueError:
+                pass
 
     # Check for bulk keywords in message or history
     for kw in BULK_KEYWORDS:
