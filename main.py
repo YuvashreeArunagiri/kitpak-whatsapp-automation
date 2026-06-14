@@ -4,14 +4,15 @@ from datetime import datetime
 import os
 import io
 import json
+import re
 import base64
 import urllib.request
 from dotenv import load_dotenv
 from claude_service import get_claude_reply, extract_order_details, classify_image, extract_payment_info
-from wati_service import send_whatsapp_message, send_product_images, send_whatsapp_pdf
+from wati_service import send_whatsapp_message, send_whatsapp_template, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product
-from sheets_service import append_daily_report, append_order_to_sheet
+from sheets_service import append_daily_report, append_order_to_sheet, append_handoff_to_sheet, append_bulk_enquiry_to_sheet
 import threading
 import time
 
@@ -20,34 +21,148 @@ load_dotenv()
 app = Flask(__name__)
 
 conversation_history = {}
-processed_message_ids = set()  # Track processed message IDs to prevent duplicates
-pending_orders = {}  # phone -> {'total': amount, 'pi_number': str} — set when PI is generated
+processed_message_ids = set()
+pending_orders = {}  # phone -> {'total': amount}
 
 # Words that indicate the customer wants to see a photo/picture of a product
 PICTURE_REQUEST_WORDS = ['picture', 'photo', 'photos', 'pictures', 'image', 'images', 'reference', 'sample', 'pic ', 'pics']
+
+# Phrases that indicate Claude handed off to the team
+HANDOFF_PHRASES = [
+    'our team will get in touch',
+    'our team will contact you',
+    'our team will reach out',
+    'our team will call you',
+    'our team will get back',
+]
+
+# Keywords that suggest bulk order context
+BULK_KEYWORDS = ['5000', '10000', '15000', '20000', '50000', '1 lakh', 'bulk order', 'large order', 'bulk quantity']
+CUSTOM_BULK_KEYWORDS = ['above 1000', 'more than 1000', '2000', '3000', '4000', '5000']
 
 
 def daily_report_scheduler():
     """Background thread — sends daily report to Google Sheets at 6 PM."""
     while True:
         now = datetime.now()
-        # Check if it's 6 PM (18:00)
         if now.hour == 18 and now.minute == 0:
             print("[KITPAK] Sending daily report to Google Sheets...")
             append_daily_report(conversation_history)
-            send_whatsapp_message(OWNER_NUMBER, f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
-            time.sleep(61)  # sleep 61 seconds to avoid double-sending
-        time.sleep(30)  # check every 30 seconds
+            send_owner_alert(f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            time.sleep(61)
+        time.sleep(30)
 
-# Start scheduler in background
 scheduler_thread = threading.Thread(target=daily_report_scheduler, daemon=True)
 scheduler_thread.start()
-pending_logo = {}        # phone -> logo bytes (waiting for bag colour confirmation)
-custom_order_state = {}  # phone -> {colour, size, qty}
+
+pending_logo = {}
+custom_order_state = {}
 
 OWNER_NUMBER = "918300475706"
 KITPAK_UPI_ID = os.environ.get("KITPAK_UPI_ID", "9489501487@okbizaxis")
 SHEET_AUTOMATION_SECRET = os.environ.get('SHEET_AUTOMATION_SECRET', '')
+
+
+def send_owner_alert(message: str) -> bool:
+    """
+    Send alert to owner. Tries session message first,
+    falls back to kitpak_owner_alert template if session expired.
+    """
+    sent = send_whatsapp_message(OWNER_NUMBER, message)
+    if sent:
+        return True
+    print(f"[KITPAK] Session message failed for owner — trying template fallback")
+    sent = send_whatsapp_template(OWNER_NUMBER, "kitpak_owner_alert", [message])
+    return sent
+
+
+def extract_context_from_history(phone: str) -> dict:
+    """
+    Extract useful context (name, product, quantity, state) from conversation history.
+    Used for logging handoffs and bulk enquiries.
+    """
+    history = conversation_history.get(phone, [])
+    full_text = ' '.join([m.get('content', '') for m in history]).lower()
+
+    # Extract customer name (look for name patterns in history)
+    customer_name = ''
+    for msg in history:
+        content = msg.get('content', '')
+        # Name is usually in user messages after address sharing
+        if msg.get('role') == 'user' and len(content) > 3 and '\n' not in content and len(content) < 50:
+            # Heuristic: short user messages before address block might be the name
+            pass
+
+    # Extract quantity mentioned
+    quantity = ''
+    qty_match = re.search(r'(\d[\d,]*)\s*(pcs|pieces|nos|units|rolls|sleeves)', full_text)
+    if qty_match:
+        quantity = qty_match.group(1).replace(',', '')
+
+    # Extract product keywords
+    product = ''
+    product_keywords = [
+        'white cover', 'colour cover', 'color cover', 'black cover', 'pink cover', 'purple cover',
+        'custom printed', 'printed cover', 'honeycomb', 'kraft', 'paper bag', 'thermal label',
+        'amazon', 'flipkart', 'meesho', 'transparent cover', 'mailer bag', 'courier cover'
+    ]
+    for kw in product_keywords:
+        if kw in full_text:
+            product = kw
+            break
+
+    # Extract state (look for common Indian states in history)
+    state = ''
+    states = ['tamil nadu', 'karnataka', 'kerala', 'andhra pradesh', 'telangana', 'maharashtra',
+              'delhi', 'gujarat', 'rajasthan', 'uttar pradesh', 'west bengal', 'punjab']
+    for s in states:
+        if s in full_text:
+            state = s.title()
+            break
+
+    return {
+        'customer_name': customer_name,
+        'product': product,
+        'quantity': quantity,
+        'state': state
+    }
+
+
+def is_bulk_enquiry(phone: str, message_text: str, reply: str) -> tuple:
+    """
+    Detect if this is a bulk enquiry based on conversation context.
+    Returns (is_bulk: bool, reason: str)
+    """
+    full_history = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])]).lower()
+
+    # Check for large quantities
+    qty_match = re.search(r'(\d[\d,]*)\s*(pcs|pieces|nos|units)', full_history)
+    if qty_match:
+        try:
+            qty = int(qty_match.group(1).replace(',', ''))
+            if qty >= 5000:
+                return True, f"Bulk quantity: {qty} pcs"
+        except ValueError:
+            pass
+
+    # Check for bulk keywords in message or history
+    for kw in BULK_KEYWORDS:
+        if kw in full_history or kw in message_text.lower():
+            return True, f"Bulk keyword detected: '{kw}'"
+
+    # Check for custom print above 1000
+    if 'custom' in full_history and ('printed' in full_history or 'print' in full_history):
+        for kw in CUSTOM_BULK_KEYWORDS:
+            if kw in full_history:
+                return True, f"Custom print bulk order: quantity '{kw}'"
+
+    return False, ''
+
+
+def is_handoff(reply: str) -> bool:
+    """Check if Claude's reply is a team-handoff response."""
+    reply_lower = reply.lower()
+    return any(phrase in reply_lower for phrase in HANDOFF_PHRASES)
 
 
 # ─── Team keyword commands ───────────────────────────────────
@@ -63,7 +178,7 @@ def handle_team_command(phone: str, message: str) -> bool:
             "Your order is now being processed. "
             "We will share the dispatch and tracking details shortly. "
             "Thank you for choosing KITPAK!")
-        send_whatsapp_message(OWNER_NUMBER, f"Done! Confirmation sent to {customer_phone}.")
+        send_owner_alert(f"Done! Confirmation sent to {customer_phone}.")
         return True
 
     if msg.startswith("DISPATCH "):
@@ -79,7 +194,7 @@ def handle_team_command(phone: str, message: str) -> bool:
                 f"You can track your order using the above number. "
                 f"Expected delivery in 3-5 business days. "
                 f"Thank you for choosing KITPAK!")
-            send_whatsapp_message(OWNER_NUMBER, f"Done! Dispatch details sent to {customer_phone}.")
+            send_owner_alert(f"Done! Dispatch details sent to {customer_phone}.")
         return True
 
     if msg.startswith("CANCEL "):
@@ -90,11 +205,11 @@ def handle_team_command(phone: str, message: str) -> bool:
             "We regret to inform you that your order could not be processed. "
             "Please contact us for further assistance. "
             "We apologise for the inconvenience.")
-        send_whatsapp_message(OWNER_NUMBER, f"Done! Cancellation sent to {customer_phone}.")
+        send_owner_alert(f"Done! Cancellation sent to {customer_phone}.")
         return True
 
     if msg == "HELP":
-        send_whatsapp_message(OWNER_NUMBER,
+        send_owner_alert(
             "KITPAK Team Commands:\n\n"
             "CONFIRM <phone> — Confirm payment and order\n"
             "DISPATCH <phone> <tracking> — Send dispatch details\n"
@@ -111,14 +226,10 @@ def download_wati_file(file_url: str) -> bytes:
     """Download a file from WATI media URL."""
     wati_api_token = os.environ.get('WATI_API_TOKEN', '')
 
-    # Try with requests library (handles redirects better)
     try:
         response = requests.get(
             file_url,
-            headers={
-                'Authorization': f'Bearer {wati_api_token}',
-                'Accept': '*/*'
-            },
+            headers={'Authorization': f'Bearer {wati_api_token}', 'Accept': '*/*'},
             timeout=15,
             allow_redirects=True
         )
@@ -128,7 +239,6 @@ def download_wati_file(file_url: str) -> bytes:
     except Exception as e:
         print(f"[KITPAK] File download error (requests): {e}")
 
-    # Try without auth header
     try:
         response = requests.get(file_url, timeout=15, allow_redirects=True)
         if response.status_code == 200:
@@ -137,14 +247,10 @@ def download_wati_file(file_url: str) -> bytes:
     except Exception as e:
         print(f"[KITPAK] File download error (no auth): {e}")
 
-    # Try with urllib as fallback
     try:
         req = urllib.request.Request(
             file_url,
-            headers={
-                'Authorization': f'Bearer {wati_api_token}',
-                'User-Agent': 'Mozilla/5.0'
-            }
+            headers={'Authorization': f'Bearer {wati_api_token}', 'User-Agent': 'Mozilla/5.0'}
         )
         with urllib.request.urlopen(req, timeout=15) as r:
             return r.read()
@@ -154,32 +260,7 @@ def download_wati_file(file_url: str) -> bytes:
     return None
 
 
-def is_likely_logo(data: dict) -> bool:
-    """Check if the incoming file is likely a logo (image or PDF)."""
-    msg_type = data.get('type', '')
-    if msg_type == 'image':
-        return True
-    if msg_type == 'document':
-        mime = (data.get('document') or {}).get('mimeType', '')
-        filename = (data.get('document') or {}).get('fileName', '').lower()
-        if 'pdf' in mime or filename.endswith('.pdf'):
-            return True
-        if 'image' in mime or filename.endswith(('.png', '.jpg', '.jpeg')):
-            return True
-    return False
-
-
-def is_likely_payment(data: dict) -> bool:
-    """Check if the incoming file is likely a payment screenshot."""
-    msg_type = data.get('type', '')
-    if msg_type == 'image':
-        # If customer has an active order (GENERATE_PI was recently sent), treat as payment
-        return True
-    return False
-
-
 def get_bag_colour_from_history(phone: str) -> str:
-    """Extract bag colour from conversation history."""
     history = conversation_history.get(phone, [])
     for msg in reversed(history):
         content = msg.get('content', '').lower()
@@ -213,7 +294,6 @@ def webhook():
         if not phone:
             return jsonify({'status': 'ignored'}), 200
 
-        # ── Only process incoming customer messages ──
         event_type = data.get('eventType', '')
         owner = data.get('owner', False)
 
@@ -233,14 +313,13 @@ def webhook():
             except (ValueError, TypeError):
                 pass
 
-        # ── Deduplicate — ignore already processed message IDs ──
+        # ── Deduplicate ──
         message_id = data.get('id', '') or data.get('whatsappMessageId', '')
         if message_id and message_id in processed_message_ids:
             print(f"[KITPAK] Duplicate message ignored: {message_id}")
             return jsonify({'status': 'ignored'}), 200
         if message_id:
             processed_message_ids.add(message_id)
-            # Keep set size manageable
             if len(processed_message_ids) > 1000:
                 processed_message_ids.clear()
 
@@ -254,7 +333,6 @@ def webhook():
             if phone not in conversation_history:
                 conversation_history[phone] = []
 
-            # Get file URL — WATI stores it in 'data' field directly
             file_url = None
             if msg_type == 'image':
                 file_url = (data.get('data') or
@@ -266,7 +344,6 @@ def webhook():
                            (data.get('document') or {}).get('url'))
             print(f"[KITPAK] File URL: {file_url}")
 
-            # Determine file extension and mime type
             ext = '.jpg'
             mime_type = 'image/jpeg'
             if msg_type == 'document':
@@ -281,39 +358,33 @@ def webhook():
                     ext = '.jpg'
                     mime_type = 'image/jpeg'
 
-            # Download file
             file_bytes = download_wati_file(file_url) if file_url else None
 
             if file_bytes:
-                # PDFs are always logos — skip vision classification
                 if ext == '.pdf':
                     file_type = 'logo'
                     print(f"[KITPAK] PDF file received — treating as logo")
                 else:
-                    # Use Claude vision to classify image
                     file_type = classify_image(file_bytes, mime_type)
                     print(f"[KITPAK] File classified as: {file_type}")
 
                 if file_type == 'logo':
-                    # Mockup generation is manual — alert owner with customer's logo/design file
-                    history_text = ' '.join([m.get('content','') for m in conversation_history.get(phone, [])])
+                    history_text = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])])
                     wants_mockup = any(word in history_text.lower() for word in ['mockup', 'mock up', 'sample', 'preview', 'design', 'custom print', 'printed cover', 'custom cover'])
 
                     conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo/design file]'})
-
                     reply = get_claude_reply(conversation_history[phone][-20:])
                     conversation_history[phone].append({'role': 'assistant', 'content': reply})
                     send_whatsapp_message(phone, reply)
 
                     if wants_mockup:
                         sender_name = data.get('senderName', phone)
-                        send_whatsapp_message(OWNER_NUMBER,
+                        send_owner_alert(
                             f"Mockup request from {sender_name} ({phone}). "
                             f"Customer has sent their logo/design file — please prepare the mockup and share it with them.")
                         print(f"[KITPAK] Mockup request alerted to owner for {phone}")
 
                 else:
-                    # Payment screenshot
                     print(f"[KITPAK] Payment screenshot received from {phone}")
                     conversation_history[phone].append({'role': 'user', 'content': '[Customer sent a payment screenshot]'})
                     send_whatsapp_message(phone,
@@ -321,8 +392,6 @@ def webhook():
                         "Our team will verify and confirm your order shortly.")
 
                     sender_name = data.get('senderName', phone)
-
-                    # Verify payment amount against expected order total
                     payment_info = extract_payment_info(file_bytes, mime_type)
                     extracted_amount = payment_info.get('amount')
                     extracted_upi = payment_info.get('upi_id')
@@ -354,7 +423,7 @@ def webhook():
                     else:
                         alert_msg += f"\nLooks OK. Please verify and reply:\nCONFIRM {phone[-10:]}"
 
-                    send_whatsapp_message(OWNER_NUMBER, alert_msg)
+                    send_owner_alert(alert_msg)
 
             else:
                 send_whatsapp_message(phone, "I had trouble opening that file. Could you please send it again?")
@@ -373,19 +442,13 @@ def webhook():
         if phone not in conversation_history:
             conversation_history[phone] = []
 
-        conversation_history[phone].append({
-            'role': 'user',
-            'content': message_text
-        })
+        conversation_history[phone].append({'role': 'user', 'content': message_text})
 
         history = conversation_history[phone][-20:]
-        time.sleep(10)  # Natural delay before replying
+        time.sleep(10)
         reply = get_claude_reply(history)
 
-        conversation_history[phone].append({
-            'role': 'assistant',
-            'content': reply
-        })
+        conversation_history[phone].append({'role': 'assistant', 'content': reply})
 
         # ── Send product images if this is a product enquiry or picture request ──
         images = get_images_from_message(message_text)
@@ -393,7 +456,6 @@ def webhook():
         matched_via_history = False
 
         if not images and picture_requested:
-            # Look back through recent messages for product context
             for past_msg in reversed(conversation_history[phone][:-1][-6:]):
                 past_product = get_product_key_from_message(past_msg.get('content', ''))
                 if past_product:
@@ -405,19 +467,61 @@ def webhook():
             send_product_images(phone, images)
             print(f"[KITPAK] Product images sent to {phone}")
 
-        # ── Send text reply — hide GENERATE_PI line from customer, override fallback for picture requests ──
+        # ── Send text reply ──
         if 'GENERATE_PI:' in reply:
-            # Send a clean confirmation message to customer instead of raw GENERATE_PI
             send_whatsapp_message(phone, "Thank you! Generating your invoice now, please wait a moment.")
         elif images and matched_via_history:
-            # Claude's reply was likely the generic team-handoff fallback (it doesn't know
-            # an image was just sent) — override with a friendly caption instead.
             friendly_reply = "Here you go! Let me know if you need anything else."
             send_whatsapp_message(phone, friendly_reply)
             conversation_history[phone][-1]['content'] = friendly_reply
         else:
             send_whatsapp_message(phone, reply)
         print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
+
+        # ── Log handoff / bulk enquiry to Google Sheets ──
+        if is_handoff(reply):
+            sender_name = data.get('senderName', '')
+            ctx = extract_context_from_history(phone)
+
+            # Check if this is a bulk enquiry
+            bulk, bulk_reason = is_bulk_enquiry(phone, message_text, reply)
+            if bulk:
+                try:
+                    append_bulk_enquiry_to_sheet(
+                        phone=phone,
+                        customer_name=sender_name or ctx['customer_name'],
+                        product=ctx['product'],
+                        quantity=ctx['quantity'],
+                        state=ctx['state'],
+                        reason=bulk_reason
+                    )
+                    print(f"[KITPAK] Bulk enquiry logged for {phone}: {bulk_reason}")
+                except Exception as e:
+                    print(f"[KITPAK] Bulk enquiry log error: {e}")
+            else:
+                # General handoff
+                try:
+                    # Determine reason for handoff
+                    reason = 'General team handoff'
+                    msg_lower = message_text.lower()
+                    if any(w in msg_lower for w in ['call', 'phone', 'speak', 'talk', 'contact']):
+                        reason = 'Customer requested callback'
+                    elif any(w in msg_lower for w in ['return', 'refund', 'damage', 'wrong']):
+                        reason = 'Return/Refund request'
+                    elif any(w in msg_lower for w in ['mockup', 'design', 'logo', 'custom print']):
+                        reason = 'Custom print / Mockup request'
+                    elif any(w in msg_lower for w in ['kraft', 'paper bag', 'paper cover']):
+                        reason = 'Custom kraft/paper bag enquiry'
+
+                    append_handoff_to_sheet(
+                        phone=phone,
+                        customer_name=sender_name or ctx['customer_name'],
+                        reason=reason,
+                        last_message=message_text
+                    )
+                    print(f"[KITPAK] Handoff logged for {phone}: {reason}")
+                except Exception as e:
+                    print(f"[KITPAK] Handoff log error: {e}")
 
         # ── Generate and send PI as PDF ──
         if 'GENERATE_PI:' in reply:
@@ -431,16 +535,15 @@ def webhook():
                         filename="KITPAK_ProformaInvoice.pdf",
                         caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
                     )
-                    # Store order total for payment verification later
                     order_total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
                     pending_orders[phone] = {'total': order_total}
                     print(f"[KITPAK] Pending order total for {phone}: Rs.{order_total}")
 
-                    # Log order to Google Sheets
                     try:
                         append_order_to_sheet(phone, order)
                     except Exception as se:
                         print(f"[KITPAK] Sheets logging error: {se}")
+
                     if not pdf_sent:
                         pi_text = generate_pi_text(order)
                         send_whatsapp_message(phone, pi_text)
@@ -449,7 +552,7 @@ def webhook():
                         print(f"[KITPAK] PI PDF sent to {phone}")
                 else:
                     send_whatsapp_message(phone, "Sorry, I had trouble generating your invoice. Our team will send it to you shortly.")
-                    send_whatsapp_message(OWNER_NUMBER, f"PI generation failed for {phone} — please send manually.")
+                    send_owner_alert(f"PI generation failed for {phone} — please send manually.")
             except Exception as e:
                 print(f"[KITPAK] PI generation error: {e}")
                 import traceback
@@ -467,8 +570,8 @@ def webhook():
 @app.route('/sheet-notify', methods=['POST'])
 def sheet_notify():
     """
-    Receives notification requests from the Google Sheets Apps Script automation
-    (OrderTracking tab: payment confirmation / dispatch notification).
+    Receives notification requests from Google Sheets Apps Script automation.
+    Uses approved WhatsApp templates — works outside the 24-hour session window.
     """
     try:
         data = request.json
@@ -481,7 +584,6 @@ def sheet_notify():
 
         msg_type = data.get('type')
         phone = str(data.get('phone') or '').strip().replace('+', '').replace(' ', '')
-        # Sheets may send phone numbers as floats (e.g. "919876543210.0")
         if phone.endswith('.0'):
             phone = phone[:-2]
         if not phone:
@@ -492,27 +594,31 @@ def sheet_notify():
         customer_name = data.get('customer_name', 'Customer')
 
         if msg_type == 'payment':
-            message = (
-                f"Hi {customer_name},\n\n"
-                f"We have received your payment successfully. "
-                f"Your order is now being processed and will be dispatched shortly.\n\n"
-                f"Thank you for choosing KITPAK."
-            )
+            sent = send_whatsapp_template(phone, 'kitpak_payment_confirmed', [customer_name])
+            if not sent:
+                sent = send_whatsapp_message(phone,
+                    f"Hi {customer_name},\n\n"
+                    f"We have received your payment successfully. "
+                    f"Your order is now being processed and will be dispatched shortly.\n\n"
+                    f"Thank you for choosing KITPAK."
+                )
+
         elif msg_type == 'dispatch':
             tracking = data.get('tracking_number', '')
             courier = data.get('courier_partner', '')
-            message = (
-                f"Hi {customer_name},\n\n"
-                f"Your KITPAK order has been dispatched.\n"
-                f"Courier Partner: {courier}\n"
-                f"Tracking Number: {tracking}\n\n"
-                f"You can track your shipment using the above tracking number.\n\n"
-                f"Thank you for choosing KITPAK."
-            )
+            sent = send_whatsapp_template(phone, 'kitpak_dispatch_notification', [customer_name, courier, tracking])
+            if not sent:
+                sent = send_whatsapp_message(phone,
+                    f"Hi {customer_name},\n\n"
+                    f"Your KITPAK order has been dispatched.\n"
+                    f"Courier Partner: {courier}\n"
+                    f"Tracking Number: {tracking}\n\n"
+                    f"You can track your shipment using the above tracking number.\n\n"
+                    f"Thank you for choosing KITPAK."
+                )
         else:
             return jsonify({'status': 'error', 'message': 'unknown type'}), 400
 
-        sent = send_whatsapp_message(phone, message)
         print(f"[KITPAK] Sheet-notify ({msg_type}) to {phone}: {'sent' if sent else 'failed'}")
         return jsonify({'status': 'ok' if sent else 'error'}), (200 if sent else 500)
 
@@ -525,16 +631,11 @@ def sheet_notify():
 
 @app.route('/daily-report', methods=['GET', 'POST'])
 def trigger_daily_report():
-    """
-    Endpoint for external cron service to trigger the daily report.
-    Call this once daily at 6 PM IST (12:30 PM UTC).
-    Example: https://kitpak-whatsapp-bot.onrender.com/daily-report
-    """
     try:
         print("[KITPAK] Daily report triggered via cron")
         success = append_daily_report(conversation_history)
         if success:
-            send_whatsapp_message(OWNER_NUMBER, f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            send_owner_alert(f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
             return jsonify({'status': 'ok', 'message': 'Daily report sent'}), 200
         else:
             return jsonify({'status': 'error', 'message': 'Failed to send report'}), 500
