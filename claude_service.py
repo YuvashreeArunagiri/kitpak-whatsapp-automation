@@ -1,387 +1,678 @@
-import anthropic
+from flask import Flask, request, jsonify
+import requests
+from datetime import datetime
 import os
+import io
 import json
 import re
+import base64
+import urllib.request
+from dotenv import load_dotenv
+from claude_service import get_claude_reply, extract_order_details, classify_image, extract_payment_info
+from wati_service import send_whatsapp_message, send_whatsapp_template, send_product_images, send_whatsapp_pdf
+from pi_service import generate_pi_text, generate_pi_pdf
+from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product
+from sheets_service import append_daily_report, append_order_to_sheet, append_handoff_to_sheet, append_bulk_enquiry_to_sheet
+import threading
+import time
 
-KITPAK_SYSTEM_PROMPT = """
-You are Abimanyu, a sales team member at KITPAK — a packaging supplies business in Tirupur.
+load_dotenv()
 
-━━━━━━━━━━━━━━━━━━━━━━━━━
-IDENTITY
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Your name is Abimanyu. You work at KITPAK.
-Never reveal you are a bot or AI — ever.
-If asked who you are: "I am Abimanyu from the KITPAK team."
-You represent KITPAK ONLY. Never mention PICKNPACK, Melo Industry or any other business.
+app = Flask(__name__)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━
-TONE & STYLE — CRITICAL
-━━━━━━━━━━━━━━━━━━━━━━━━━
-- Speak like a real person, not a bot. Short, natural replies.
-- Maximum 2 lines per reply unless sharing pricing or details.
-- Never use * ** # for formatting. Plain text only.
-- No emojis unless customer uses them first.
-- NEVER list sizes or options in a reply. Just ask the question simply.
-- Warm and respectful always.
+conversation_history = {}
+processed_message_ids = set()
+pending_orders = {}  # phone -> {'total': amount}
 
-Good: "Which size do you need?"
-Bad: "We have 6x8, 8x10, 10x12... which one works for you?"
+# Words that indicate the customer wants to see a photo/picture of a product
+PICTURE_REQUEST_WORDS = ['picture', 'photo', 'photos', 'pictures', 'image', 'images', 'reference', 'sample', 'pic ', 'pics']
 
-Good: "Quantity please?"
-Bad: "How many covers would you like? (Minimum 100 per pack)"
+# Phrases that indicate Claude handed off to the team
+HANDOFF_PHRASES = [
+    'our team will get in touch',
+    'our team will contact you',
+    'our team will reach out',
+    'our team will call you',
+    'our team will get back',
+]
 
-━━━━━━━━━━━━━━━━━━━━━━━━━
-MEMORY — MOST IMPORTANT RULE
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Only ask for what is STILL MISSING from the conversation.
-Never repeat a question already answered.
-
-When a customer sends multiple details in one message (e.g. "2000 white cover printed 6x8"), extract ALL details from that single message:
-- Product type: white custom printed cover
-- Size: 6x8
-- Quantity: 2000
-Do NOT ask again for details already provided in that message.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-LANGUAGE
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Default: English. Switch only based on what customer types.
-Never judge language from name or location.
-If customer writes in Tamil (e.g. "seringa", "call panna sollunga", "nga") — reply in Tamil or simple English, whichever feels natural.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-ABOUT KITPAK
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Business: KITPAK / SARAVANA TRADING, Tirupur - 641603
-GSTIN: 33ATTPG0334P2ZD
-Payment: UPI only (GPay, PhonePe, Paytm, BHIM). No COD, no bank transfer.
-UPI ID: 9489501487@okbizaxis
-All orders are prepaid. Never mention this to customers — just follow the flow.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-PRODUCT SPECS
-━━━━━━━━━━━━━━━━━━━━━━━━━
-All courier covers are 50 microns thick.
-All prices are per piece and include GST and free shipping.
-For orders up to 5000 pcs, shipping is free. Above 5000 pcs, transport is extra.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-QUANTITY RULES — READ THIS FIRST BEFORE QUOTING ANY PRICE
-━━━━━━━━━━━━━━━━━━━━━━━━━
-PLAIN COVERS (white, colour, Amazon, Flipkart, Meesho, transparent, kraft):
-- 100 to 5000 pcs → you can quote price and process order normally
-- ABOVE 5000 pcs → STOP. Say "Our team will get in touch with you shortly." Do NOT quote any price. No exceptions.
-
-CUSTOM PRINTED COVERS (white or colour):
-- 100 to 1000 pcs → you can quote price and process order normally
-- ABOVE 1000 pcs → STOP. Say "Our team will get in touch with you shortly." Do NOT quote any price. No exceptions.
-
-HONEYCOMB SLEEVES BULK:
-- Standard quantities → quote price normally
-- Bulk sleeves → Forward to team
-
-Always check quantity BEFORE quoting price.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-COLOUR vs PRINT COLOUR — CRITICAL
-━━━━━━━━━━━━━━━━━━━━━━━━━
-There are TWO separate colour concepts. Always distinguish clearly:
-
-1. COVER COLOUR — the colour of the cover/bag itself:
-   - White (default, most common)
-   - Pink, Purple, Black (colour covers — only 5 sizes available)
-
-2. PRINT COLOUR — the colour of the logo/design printed ON the cover:
-   - Single colour print (for orders under 15,000 pcs)
-   - Multi colour print (for orders 15,000+ pcs)
-
-RULES:
-- If customer says "black cover" → they want a BLACK COLOURED cover (not white cover with black print)
-- If customer says "printed in black" or "black print" → they want custom printing with black ink on the cover
-- If customer says "white cover with logo" → white cover + custom printing
-- If customer says "black cover with logo" → black colour cover + custom printing
-- NEVER confuse cover colour with print colour
-- If unclear which they mean, ask: "Do you mean a black coloured cover, or a white cover with black printing?"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE SIZES — STRICT
-━━━━━━━━━━━━━━━━━━━━━━━━━
-WHITE COURIER COVERS: 6x8, 8x10, 9x12, 10x12, 10x14, 12x14, 12x16, 14x18, 16x20, 20x24
-COLOUR COVERS (Pink/Purple/Black): 6x8, 8x10, 10x12, 12x14, 12x16 — ONLY THESE 5 SIZES
-CUSTOM PRINTED WHITE: 6x8, 8x10, 9x12, 10x12, 10x14, 12x14, 12x16, 14x18, 16x20, 20x23
-CUSTOM PRINTED COLOUR (Pink/Purple/Black): 6x8, 8x10, 10x12, 12x14, 12x16 — ONLY THESE 5 SIZES
-
-If customer asks for a size not available in colour covers → tell them politely and offer closest size or white cover.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-PRICING (per piece rates)
-━━━━━━━━━━━━━━━━━━━━━━━━━
-HOW TO QUOTE PRICE:
-- Give total amount = qty x per piece rate
-- Example: 200 pcs of 8x10 white = 200 x ₹2.90 = ₹580
-- All prices include GST + free shipping (for up to 5000 pcs)
-
-WHITE COURIER COVERS (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 6x8=₹2.30 | 8x10=₹2.90 | 9x12=₹3.10 | 10x12=₹3.20 | 10x14=₹3.60 | 12x14=₹4.60 | 12x16=₹5.60 | 14x18=₹8.60 | 16x20=₹10.60 | 20x24=₹12.60
-MOQ 1000 (per piece): 6x8=₹2.10 | 8x10=₹2.75 | 9x12=₹2.95 | 10x12=₹3.05 | 10x14=₹3.45 | 12x14=₹4.25 | 12x16=₹5.35 | 14x18=₹8.35 | 16x20=₹10.35 | 20x24=₹12.35
-MOQ 5000 (per piece, transport extra): 6x8=₹1.50 | 8x10=₹1.90 | 9x12=₹1.90 | 10x12=₹2.20 | 10x14=₹2.40 | 12x14=₹2.90 | 12x16=₹3.40 | 14x18=₹6.00 | 16x20=₹7.25 | 20x23=₹8.00
-
-COLOUR COURIER COVERS — Pink/Purple/Black (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 6x8=₹3.40 | 8x10=₹3.80 | 10x12=₹5.30 | 12x14=₹6.10 | 12x16=₹6.80
-MOQ 1000 (per piece): 6x8=₹3.00 | 8x10=₹3.40 | 10x12=₹4.80 | 12x14=₹5.50 | 12x16=₹6.00
-MOQ 5000 (per piece, transport extra): 6x8=₹2.20 | 8x10=₹2.40 | 10x12=₹3.20 | 12x14=₹4.10 | 12x16=₹4.60
-
-AMAZON COVERS (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 8x11=₹3.20 | 10x12=₹3.60 | 12x16=₹5.20
-MOQ 5000 (per piece, transport extra): 8x11=₹1.90 | 10x12=₹2.20 | 12x16=₹3.20
-
-FLIPKART TRANSPARENT COVERS (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): SB1(6x8)=₹2.90 | SB2.5(8x11)=₹3.60 | SB2(10x13)=₹4.30 | SB3(12x15.5)=₹6.30 | SB3.5(14x18)=₹6.90
-MOQ 5000 (per piece, transport extra): SB1=₹1.90 | SB2.5=₹2.50 | SB2=₹3.20 | SB3=₹4.50 | SB3.5=₹5.10
-
-MEESHO TRANSPARENT COVERS (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 8x10(TP-02)=₹3.00 | 9x10(TP-15)=₹3.40 | 10x12(TP-04)=₹3.70 | 10x14(TP-05)=₹4.50 | 12x14(TP-00)=₹5.40 | 12x16(TP-06)=₹5.80
-MOQ 5000 (per piece, transport extra): 8x10=₹1.80 | 9x10=₹1.95 | 10x12=₹2.20 | 10x14=₹2.50 | 12x14=₹3.00 | 12x16=₹3.30
-
-TRANSPARENT PACKING COVERS (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 5.5x7.5=₹1.40 | 7.5x9.5=₹1.90 | 9.5x11.5=₹2.40 | 11.5x13.5=₹3.20
-MOQ 500 (per piece): 5.5x7.5=₹0.98 | 7.5x9.5=₹1.74 | 9.5x11.5=₹2.25 | 11.5x13.5=₹3.00
-MOQ 5000 (per piece, transport extra): 5.5x7.5=₹0.60 | 7.5x9.5=₹0.65 | 9.5x11.5=₹1.00 | 11.5x13.5=₹1.60
-
-PLAIN PAPER BAG/KRAFT (100-5000 pcs only — above 5000 → team handoff):
-MOQ 100 (per piece): 9x11=₹4.40 | 11x14=₹5.80 | 15x18=₹8.80
-MOQ 5000 (per piece, transport extra): 9x11=₹3.00 | 11x14=₹4.40 | 15x18=₹6.50
-
-CUSTOM PRINTED WHITE COVERS (100-1000 pcs only — above 1000 → team handoff):
-MOQ 100 (per piece): 6x8=₹10.00 | 8x10=₹10.90 | 9x12=₹11.00 | 10x12=₹11.20 | 10x14=₹11.60 | 12x14=₹12.60 | 12x16=₹13.60 | 14x18=₹16.60 | 16x20=₹18.60 | 20x23=₹20.60
-MOQ 1000 (per piece): 6x8=₹5.10 | 8x10=₹5.75 | 9x12=₹5.95 | 10x12=₹6.05 | 10x14=₹6.45 | 12x14=₹7.75 | 12x16=₹8.85 | 14x18=₹11.85 | 16x20=₹12.85 | 20x23=₹14.85
-ABOVE 1000 PCS → team handoff. DO NOT QUOTE PRICE.
-
-CUSTOM PRINTED COLOUR COVERS — Pink/Purple/Black (100-1000 pcs only — above 1000 → team handoff):
-MOQ 100 (per piece): 6x8=₹11.40 | 8x10=₹11.90 | 10x12=₹13.30 | 12x14=₹14.10 | 12x16=₹15.10
-MOQ 1000 (per piece): 6x8=₹6.00 | 8x10=₹6.50 | 10x12=₹8.00 | 12x14=₹9.00 | 12x16=₹10.00
-ABOVE 1000 PCS → team handoff. DO NOT QUOTE PRICE.
-
-THERMAL SHIPPING LABEL ROLL (400 labels, 100x150mm): ₹399 per roll (MOQ 1, bulk 36+ rolls = ₹250/roll)
-THERMAL SHIPPING LABEL A4 4-CUT (100 sheets per pack): ₹399 per pack
-
-HONEYCOMB PAPER ROLL:
-10mtr x1=₹250 | 10mtr x3=₹599 | 100mtr x2=₹1999
-Bulk 15+ rolls: 10mtr=₹110/roll | 100mtr=₹525/roll
-
-HONEYCOMB PAPER SLEEVES (MOQ 100 pcs, per piece):
-10cm=₹4.00 | 15cm=₹6.00 | 20cm=₹8.00 | 22.5cm=₹10.00 | 30cm=₹12.00 | 40cm=₹16.00 | 45cm=₹18.00 | 90cm=₹36.00
-Bulk sleeves → Forward to team
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-PRICING RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Always quote: total amount = quantity x per piece rate.
-Apply the correct tier based on quantity ordered.
-For quantities between tiers, use the lower tier rate (e.g. 500 pcs uses MOQ 100 rate).
-For 5000 pcs orders, always say transport is extra.
-No negotiation on price or MOQ. MOQ is 100 pcs for all covers.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-DISPATCH & DELIVERY
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Plain covers and standard items:
-- Order placed before 6:00 PM → dispatched same day
-- Order placed after 6:00 PM → dispatched next day
-
-Custom printed orders:
-- Payment first → our team sends layout for approval → customer approves → 10-14 working days production → dispatch
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-CONVERSATION FLOWS
-━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PLAIN COVER ORDER:
-1. Customer asks → ask size (if not already given)
-2. Ask quantity (if not already given)
-3. CHECK QUANTITY: if above 5000 → team handoff immediately. If 5000 or below → continue.
-4. Quote total price (qty x per piece rate). For 5000 pcs, mention transport is extra.
-5. Customer confirms → ask: "Please share your full name, delivery address with pincode, and contact number."
-6. Once received → reply EXACTLY:
-GENERATE_PI:{"customer_name":"<name>","phone":"<phone>","address":"<address>","city":"<city>","pincode":"<pincode>","state":"<state>","gstin":"<gstin or empty>","items":[{"desc":"<product + size>","qty":<qty>,"rate":<per piece rate>}]}
-
-CUSTOM PRINTED COVER ORDER — STRICT FLOW:
-1. Ask: white or colour? (if not told)
-2. Ask: size? (if not already given)
-3. Ask: quantity? (if not already given)
-4. CHECK QUANTITY FIRST:
-   - If quantity is 1-1000 pcs → quote price and continue flow
-   - If quantity is ABOVE 1000 pcs → STOP immediately. Say "Our team will get in touch with you shortly." Do NOT ask for any more details. Do NOT quote a price.
-5. (Only for 1-1000 pcs) Quote price
-6. If customer asks for mockup → "Please send your logo or design file (PNG, JPG or PDF) and our team will prepare a mockup for you."
-7. Once file received → acknowledge receipt only
-8. Customer confirms order → ask for name/address/contact
-9. Once received → generate PI → customer pays
-10. After payment → team prepares layout → approval → 10-14 days production → dispatch
-
-CRITICAL RULES:
-- NEVER ask for name/address before customer confirms the order
-- When customer sends a logo/design file, just acknowledge receipt
-- NEVER say you cannot view or access the file
-- NEVER use bullet points in replies
-- NEVER ask customer to describe their design
-- GENERATE_PI line must be valid JSON on one line. No extra text before or after.
-- If customer provides size AND quantity in the same message, extract both — do NOT ask again
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-CUSTOM PRINTING RULES
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Available only on White and Colour courier covers.
-NOT available on Meesho, Flipkart, Amazon, Kraft/Paper covers, Packing covers, Labels, Honeycomb.
-If customer asks for custom printed paper bag / Kraft cover → say "Our team will get in touch with you shortly."
-Under 15,000 covers: single colour only.
-15,000+: single or multi colour.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-TEAM CONTACT — NUMBER CLARIFICATION
-━━━━━━━━━━━━━━━━━━━━━━━━━
-If a customer asks to:
-- Talk to the team / speak to someone / talk to a person
-- Be called / call me / phone me / call panna sollunga / call panunga / call pannu
-- Says "I want to talk to you" meaning a human
-- Says "connect me to team" or "I want human support"
-
-Then ALWAYS follow this flow:
-1. First ask: "Sure! Should we contact you on this same number, or a different number?"
-2. If they say "same number" → reply: "Got it, our team will reach out to you on this number shortly." Ask for name only.
-3. If they give a different number → reply: "Got it, our team will contact you on <number> shortly." Ask for name.
-4. Never promise a specific callback time.
-5. Never ask for phone number if they said "same number."
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-FALLBACK — UNCLEAR MESSAGES
-━━━━━━━━━━━━━━━━━━━━━━━━━
-If you do not understand the customer's message, or are unsure how to respond, or the request is outside what you know → say "Our team will get in touch with you shortly." Do not guess.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-TEAM HANDOFF
-━━━━━━━━━━━━━━━━━━━━━━━━━
-"Our team will get in touch with you shortly."
-Never mention team names. Never ask customer to wait for a specific team.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-RETURNS & REFUNDS
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Accepted only for defective, damaged, or wrong products.
-"Our team will contact you shortly." → alert 8300475706.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-COURIER PARTNERS (never tell customer)
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Tamil Nadu → ST Courier
-Karnataka, Kerala, AP, Telangana → DTDC
-All other states → India Post
-Bulk 5000 pcs → Transport (mention this when quoting 5000 pcs)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-FOLLOW-UP
-━━━━━━━━━━━━━━━━━━━━━━━━━
-Only ONE follow-up allowed — only after PI has been sent, send one follow-up the next day.
-No follow-up for general enquiries.
-Never send more than one follow-up message ever.
-EOD summary → 7:30 PM to 8300475706.
-"""
+# Keywords that suggest bulk order context
+BULK_KEYWORDS = ['5000', '10000', '15000', '20000', '50000', '1 lakh', 'bulk order', 'large order', 'bulk quantity']
+CUSTOM_BULK_KEYWORDS = ['above 1000', 'more than 1000', '2000', '3000', '4000', '5000']
 
 
-def get_claude_reply(conversation_history: list) -> str:
-    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=500,
-        system=KITPAK_SYSTEM_PROMPT,
-        messages=conversation_history
-    )
-    return response.content[0].text
+def daily_report_scheduler():
+    """Background thread — sends daily report to Google Sheets at 6 PM."""
+    while True:
+        now = datetime.now()
+        if now.hour == 18 and now.minute == 0:
+            print("[KITPAK] Sending daily report to Google Sheets...")
+            append_daily_report(conversation_history)
+            send_owner_alert(f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            time.sleep(61)
+        time.sleep(30)
+
+scheduler_thread = threading.Thread(target=daily_report_scheduler, daemon=True)
+scheduler_thread.start()
+
+pending_logo = {}
+custom_order_state = {}
+
+OWNER_NUMBER = "918300475706"
+KITPAK_UPI_ID = os.environ.get("KITPAK_UPI_ID", "9489501487@okbizaxis")
+SHEET_AUTOMATION_SECRET = os.environ.get('SHEET_AUTOMATION_SECRET', '')
 
 
-def classify_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
-    import base64
-    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+def send_owner_alert(message: str) -> bool:
+    """
+    Send alert to owner. Tries session message first,
+    falls back to kitpak_owner_alert template if session expired.
+    """
+    sent = send_whatsapp_message(OWNER_NUMBER, message)
+    if sent:
+        return True
+    print(f"[KITPAK] Session message failed for owner — trying template fallback")
+    sent = send_whatsapp_template(OWNER_NUMBER, "kitpak_owner_alert", [message])
+    return sent
+
+
+def extract_context_from_history(phone: str) -> dict:
+    """
+    Extract useful context (name, product, quantity, state) from conversation history.
+    Used for logging handoffs and bulk enquiries.
+    """
+    history = conversation_history.get(phone, [])
+    full_text = ' '.join([m.get('content', '') for m in history]).lower()
+
+    # Extract customer name (look for name patterns in history)
+    customer_name = ''
+    for msg in history:
+        content = msg.get('content', '')
+        # Name is usually in user messages after address sharing
+        if msg.get('role') == 'user' and len(content) > 3 and '\n' not in content and len(content) < 50:
+            # Heuristic: short user messages before address block might be the name
+            pass
+
+    # Extract quantity mentioned
+    quantity = ''
+    qty_match = re.search(r'(\d[\d,]*)\s*(pcs|pieces|nos|units|rolls|sleeves)', full_text)
+    if qty_match:
+        quantity = qty_match.group(1).replace(',', '')
+
+    # Extract product keywords
+    product = ''
+    product_keywords = [
+        'white cover', 'colour cover', 'color cover', 'black cover', 'pink cover', 'purple cover',
+        'custom printed', 'printed cover', 'honeycomb', 'kraft', 'paper bag', 'thermal label',
+        'amazon', 'flipkart', 'meesho', 'transparent cover', 'mailer bag', 'courier cover'
+    ]
+    for kw in product_keywords:
+        if kw in full_text:
+            product = kw
+            break
+
+    # Extract state (look for common Indian states in history)
+    state = ''
+    states = ['tamil nadu', 'karnataka', 'kerala', 'andhra pradesh', 'telangana', 'maharashtra',
+              'delhi', 'gujarat', 'rajasthan', 'uttar pradesh', 'west bengal', 'punjab']
+    for s in states:
+        if s in full_text:
+            state = s.title()
+            break
+
+    return {
+        'customer_name': customer_name,
+        'product': product,
+        'quantity': quantity,
+        'state': state
+    }
+
+
+def is_bulk_enquiry(phone: str, message_text: str, reply: str) -> tuple:
+    """
+    Detect if this is a bulk enquiry based on conversation context.
+    Returns (is_bulk: bool, reason: str)
+    """
+    full_history = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])]).lower()
+
+    # Check for quantities — with or without unit suffix
+    is_custom = 'custom' in full_history and ('printed' in full_history or 'print' in full_history)
+    qty_patterns = [
+        r'(\d[\d,]*)\s*(pcs|pieces|nos|units|covers|bags|rolls|sleeves)',
+        r'(\d{4,})',
+    ]
+    for pattern in qty_patterns:
+        for match in re.finditer(pattern, full_history):
+            try:
+                qty = int(match.group(1).replace(',', ''))
+                if qty > 5000:
+                    return True, f"Bulk quantity: {qty} pcs"
+                if is_custom and qty > 1000:
+                    return True, f"Custom print bulk order: {qty} pcs"
+            except ValueError:
+                pass
+
+    # Check for bulk keywords in message or history
+    for kw in BULK_KEYWORDS:
+        if kw in full_history or kw in message_text.lower():
+            return True, f"Bulk keyword detected: '{kw}'"
+
+    # Check for custom print above 1000
+    if 'custom' in full_history and ('printed' in full_history or 'print' in full_history):
+        for kw in CUSTOM_BULK_KEYWORDS:
+            if kw in full_history:
+                return True, f"Custom print bulk order: quantity '{kw}'"
+
+    return False, ''
+
+
+def is_handoff(reply: str) -> bool:
+    """Check if Claude's reply is a team-handoff response."""
+    reply_lower = reply.lower()
+    return any(phrase in reply_lower for phrase in HANDOFF_PHRASES)
+
+
+# ─── Team keyword commands ───────────────────────────────────
+def handle_team_command(phone: str, message: str) -> bool:
+    msg = message.strip().upper()
+
+    if msg.startswith("CONFIRM "):
+        customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
+        if not customer_phone.startswith("91"):
+            customer_phone = "91" + customer_phone
+        send_whatsapp_message(customer_phone,
+            "Great news! Your payment has been verified and confirmed. "
+            "Your order is now being processed. "
+            "We will share the dispatch and tracking details shortly. "
+            "Thank you for choosing KITPAK!")
+        send_owner_alert(f"Done! Confirmation sent to {customer_phone}.")
+        return True
+
+    if msg.startswith("DISPATCH "):
+        parts = message.strip().split(" ", 2)
+        if len(parts) >= 2:
+            customer_phone = parts[1].strip().replace("+", "").replace(" ", "")
+            if not customer_phone.startswith("91"):
+                customer_phone = "91" + customer_phone
+            tracking = parts[2].strip() if len(parts) > 2 else "Will be updated shortly"
+            send_whatsapp_message(customer_phone,
+                f"Your order has been dispatched!\n\n"
+                f"Tracking Number: {tracking}\n\n"
+                f"You can track your order using the above number. "
+                f"Expected delivery in 3-5 business days. "
+                f"Thank you for choosing KITPAK!")
+            send_owner_alert(f"Done! Dispatch details sent to {customer_phone}.")
+        return True
+
+    if msg.startswith("CANCEL "):
+        customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
+        if not customer_phone.startswith("91"):
+            customer_phone = "91" + customer_phone
+        send_whatsapp_message(customer_phone,
+            "We regret to inform you that your order could not be processed. "
+            "Please contact us for further assistance. "
+            "We apologise for the inconvenience.")
+        send_owner_alert(f"Done! Cancellation sent to {customer_phone}.")
+        return True
+
+    if msg == "HELP":
+        send_owner_alert(
+            "KITPAK Team Commands:\n\n"
+            "CONFIRM <phone> — Confirm payment and order\n"
+            "DISPATCH <phone> <tracking> — Send dispatch details\n"
+            "CANCEL <phone> — Cancel order\n\n"
+            "Example:\n"
+            "CONFIRM 9876543210\n"
+            "DISPATCH 9876543210 ST123456789")
+        return True
+
+    return False
+
+
+def download_wati_file(file_url: str) -> bytes:
+    """Download a file from WATI media URL."""
+    wati_api_token = os.environ.get('WATI_API_TOKEN', '')
+
     try:
-        image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=10,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mime_type,
-                            "data": image_data
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": "Is this image a logo/brand design file OR a payment screenshot (showing UPI, bank transfer, transaction ID etc)? Reply with exactly one word: 'logo' or 'payment'."
-                    }
-                ]
-            }]
+        response = requests.get(
+            file_url,
+            headers={'Authorization': f'Bearer {wati_api_token}', 'Accept': '*/*'},
+            timeout=15,
+            allow_redirects=True
         )
-        result = response.content[0].text.strip().lower()
-        if 'payment' in result:
-            return 'payment'
-        return 'logo'
+        if response.status_code == 200:
+            return response.content
+        print(f"[KITPAK] File download status: {response.status_code}")
     except Exception as e:
-        print(f"[KITPAK] Image classification error: {e}")
-        return 'unknown'
+        print(f"[KITPAK] File download error (requests): {e}")
 
-
-def extract_order_details(reply: str) -> dict:
     try:
-        match = re.search(r'GENERATE_PI:\s*(\{.*\})', reply, re.DOTALL)
-        if match:
-            json_str = match.group(1).strip()
-            return json.loads(json_str)
+        response = requests.get(file_url, timeout=15, allow_redirects=True)
+        if response.status_code == 200:
+            return response.content
+        print(f"[KITPAK] File download (no auth) status: {response.status_code}")
     except Exception as e:
-        print(f"[KITPAK] Order extraction error: {e}")
+        print(f"[KITPAK] File download error (no auth): {e}")
+
+    try:
+        req = urllib.request.Request(
+            file_url,
+            headers={'Authorization': f'Bearer {wati_api_token}', 'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.read()
+    except Exception as e:
+        print(f"[KITPAK] File download error (urllib): {e}")
+
     return None
 
 
-def extract_payment_info(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
-    import base64
-    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+def get_bag_colour_from_history(phone: str) -> str:
+    history = conversation_history.get(phone, [])
+    for msg in reversed(history):
+        content = msg.get('content', '').lower()
+        for colour in ['black', 'pink', 'purple', 'white']:
+            if colour in content:
+                return colour
+    return 'white'
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
     try:
-        image_data = base64.standard_b64encode(image_bytes).decode("utf-8")
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mime_type,
-                            "data": image_data
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "This is a payment screenshot. Extract the following details and "
-                            "respond ONLY with valid JSON, no other text:\n"
-                            '{"amount": <number or null>, "upi_id": "<recipient UPI ID or null>", '
-                            '"status": "<success/pending/failed/unclear>"}\n'
-                            "amount should be the total transaction amount in rupees as a number. "
-                            "upi_id is the receiver's UPI ID if visible (e.g. xxxx@xxxx). "
-                            "status reflects whether the payment shows as successful, pending, failed, or unclear."
-                        )
-                    }
-                ]
-            }]
-        )
-        text = response.content[0].text.strip()
-        text = re.sub(r'^```json\s*|```\s*$', '', text, flags=re.MULTILINE).strip()
-        return json.loads(text)
+        data = request.json
+        print(f"[KITPAK] Payload: {data}")
+
+        if not data:
+            return jsonify({'status': 'no data'}), 200
+
+        phone = (data.get('waId') or data.get('from') or '')
+        msg_type = data.get('type', 'text')
+
+        message_text = ''
+        if data.get('text') and isinstance(data.get('text'), dict):
+            message_text = data['text'].get('body', '')
+        elif data.get('text') and isinstance(data.get('text'), str):
+            message_text = data['text']
+        elif data.get('body'):
+            message_text = data['body']
+        message_text = message_text.strip()
+
+        if not phone:
+            return jsonify({'status': 'ignored'}), 200
+
+        event_type = data.get('eventType', '')
+        owner = data.get('owner', False)
+
+        if owner:
+            return jsonify({'status': 'ignored'}), 200
+        if event_type != 'message':
+            return jsonify({'status': 'ignored'}), 200
+
+        # ── Stop bot if conversation is assigned to a human agent ──
+        assigned_id = data.get('assignedId')
+        operator_name = data.get('operatorName')
+        if assigned_id or operator_name:
+            print(f'[KITPAK] Conversation assigned to human ({operator_name or assigned_id}) — bot skipping')
+            return jsonify({'status': 'ignored_assigned'}), 200
+
+        # ── Ignore stale/replayed messages (older than 2 minutes) ──
+        msg_timestamp = data.get('timestamp')
+        if msg_timestamp:
+            try:
+                age_seconds = time.time() - int(msg_timestamp)
+                if age_seconds > 120:
+                    print(f"[KITPAK] Ignoring stale message (age {int(age_seconds)}s): {data.get('text')}")
+                    return jsonify({'status': 'ignored_stale'}), 200
+            except (ValueError, TypeError):
+                pass
+
+        # ── Deduplicate ──
+        message_id = data.get('id', '') or data.get('whatsappMessageId', '')
+        if message_id and message_id in processed_message_ids:
+            print(f"[KITPAK] Duplicate message ignored: {message_id}")
+            return jsonify({'status': 'ignored'}), 200
+        if message_id:
+            processed_message_ids.add(message_id)
+            if len(processed_message_ids) > 1000:
+                processed_message_ids.clear()
+
+        # ── Team command from owner number ──
+        if phone == OWNER_NUMBER and message_text:
+            if handle_team_command(phone, message_text):
+                return jsonify({'status': 'ok'}), 200
+
+        # ── Handle file uploads (logo or payment screenshot) ──
+        if msg_type in ['image', 'document']:
+            if phone not in conversation_history:
+                conversation_history[phone] = []
+
+            file_url = None
+            if msg_type == 'image':
+                file_url = (data.get('data') or
+                           (data.get('image') or {}).get('link') or
+                           (data.get('image') or {}).get('url'))
+            elif msg_type == 'document':
+                file_url = (data.get('data') or
+                           (data.get('document') or {}).get('link') or
+                           (data.get('document') or {}).get('url'))
+            print(f"[KITPAK] File URL: {file_url}")
+
+            ext = '.jpg'
+            mime_type = 'image/jpeg'
+            if msg_type == 'document':
+                fname = (data.get('document') or {}).get('fileName', 'file.jpg').lower()
+                if fname.endswith('.pdf'):
+                    ext = '.pdf'
+                    mime_type = 'application/pdf'
+                elif fname.endswith('.png'):
+                    ext = '.png'
+                    mime_type = 'image/png'
+                else:
+                    ext = '.jpg'
+                    mime_type = 'image/jpeg'
+
+            file_bytes = download_wati_file(file_url) if file_url else None
+
+            if file_bytes:
+                if ext == '.pdf':
+                    file_type = 'logo'
+                    print(f"[KITPAK] PDF file received — treating as logo")
+                else:
+                    file_type = classify_image(file_bytes, mime_type)
+                    print(f"[KITPAK] File classified as: {file_type}")
+
+                if file_type == 'unknown':
+                    # Cannot classify — ask customer
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent a file — type unclear]'})
+                    send_whatsapp_message(phone,
+                        "Could you let me know — is this a reference image of the product you want, or your logo/design file for printing?")
+                elif file_type == 'logo':
+                    history_text = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])])
+                    wants_mockup = any(word in history_text.lower() for word in ['mockup', 'mock up', 'sample', 'preview', 'design', 'custom print', 'printed cover', 'custom cover'])
+
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent their logo/design file]'})
+                    reply = get_claude_reply(conversation_history[phone][-20:])
+                    conversation_history[phone].append({'role': 'assistant', 'content': reply})
+                    send_whatsapp_message(phone, reply)
+
+                    if wants_mockup:
+                        sender_name = data.get('senderName', phone)
+                        send_owner_alert(
+                            f"Mockup request from {sender_name} ({phone}). "
+                            f"Customer has sent their logo/design file — please prepare the mockup and share it with them.")
+                        print(f"[KITPAK] Mockup request alerted to owner for {phone}")
+
+                else:
+                    print(f"[KITPAK] Payment screenshot received from {phone}")
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent a payment screenshot]'})
+                    send_whatsapp_message(phone,
+                        "Thank you! We have received your payment screenshot. "
+                        "Our team will verify and confirm your order shortly.")
+
+                    sender_name = data.get('senderName', phone)
+                    payment_info = extract_payment_info(file_bytes, mime_type)
+                    extracted_amount = payment_info.get('amount')
+                    extracted_upi = payment_info.get('upi_id')
+                    pay_status = payment_info.get('status', 'unclear')
+                    expected_total = pending_orders.get(phone, {}).get('total')
+
+                    warning_lines = []
+                    if expected_total is not None and extracted_amount is not None:
+                        if abs(float(extracted_amount) - float(expected_total)) > 0.5:
+                            warning_lines.append(f"AMOUNT MISMATCH: Expected Rs.{expected_total:,.2f} but screenshot shows Rs.{extracted_amount:,.2f}")
+                    if extracted_upi and KITPAK_UPI_ID not in extracted_upi and extracted_upi not in KITPAK_UPI_ID:
+                        warning_lines.append(f"UPI ID MISMATCH: Payment appears to be sent to {extracted_upi}, not our UPI ID")
+                    if pay_status in ['failed', 'pending']:
+                        warning_lines.append(f"PAYMENT STATUS: Screenshot shows '{pay_status}' — may not be a successful payment")
+                    if extracted_amount is None and pay_status == 'unclear':
+                        warning_lines.append("Could not read payment details from screenshot — please verify manually")
+
+                    alert_msg = (
+                        f"Payment screenshot received from {sender_name} ({phone}).\n"
+                        f"Detected amount: Rs.{extracted_amount if extracted_amount is not None else 'Not detected'}\n"
+                        f"Expected amount: Rs.{expected_total:,.2f}\n" if expected_total is not None else
+                        f"Payment screenshot received from {sender_name} ({phone}).\n"
+                        f"Detected amount: Rs.{extracted_amount if extracted_amount is not None else 'Not detected'}\n"
+                    )
+
+                    if warning_lines:
+                        alert_msg += "\n⚠️ WARNING:\n" + "\n".join(warning_lines) + "\n"
+                        alert_msg += f"\nPlease verify carefully before confirming.\nCONFIRM {phone[-10:]}"
+                    else:
+                        alert_msg += f"\nLooks OK. Please verify and reply:\nCONFIRM {phone[-10:]}"
+
+                    send_owner_alert(alert_msg)
+
+            else:
+                send_whatsapp_message(phone, "I had trouble opening that file. Could you please send it again?")
+
+            return jsonify({'status': 'ok'}), 200
+
+        # ── Ignore non-text messages ──
+        if msg_type not in ['text', '']:
+            return jsonify({'status': 'ignored'}), 200
+
+        if not message_text:
+            return jsonify({'status': 'ignored'}), 200
+
+        print(f"[KITPAK] Message from {phone}: {message_text}")
+
+        if phone not in conversation_history:
+            conversation_history[phone] = []
+
+        conversation_history[phone].append({'role': 'user', 'content': message_text})
+
+        history = conversation_history[phone][-20:]
+        time.sleep(10)
+        reply = get_claude_reply(history)
+
+        conversation_history[phone].append({'role': 'assistant', 'content': reply})
+
+        # ── Send product images if this is a product enquiry or picture request ──
+        images = get_images_from_message(message_text)
+        picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
+        matched_via_history = False
+
+        if not images and picture_requested:
+            for past_msg in reversed(conversation_history[phone][:-1][-6:]):
+                past_product = get_product_key_from_message(past_msg.get('content', ''))
+                if past_product:
+                    images = get_images_for_product(past_product)
+                    matched_via_history = True
+                    break
+
+        if images:
+            send_product_images(phone, images)
+            print(f"[KITPAK] Product images sent to {phone}")
+
+        # ── Send text reply ──
+        if 'GENERATE_PI:' in reply:
+            send_whatsapp_message(phone, "Thank you! Generating your invoice now, please wait a moment.")
+        elif images and matched_via_history:
+            friendly_reply = "Here you go! Let me know if you need anything else."
+            send_whatsapp_message(phone, friendly_reply)
+            conversation_history[phone][-1]['content'] = friendly_reply
+        else:
+            send_whatsapp_message(phone, reply)
+        print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
+
+        # ── Log handoff / bulk enquiry to Google Sheets ──
+        if is_handoff(reply):
+            sender_name = data.get('senderName', '')
+            ctx = extract_context_from_history(phone)
+
+            # Check if this is a bulk enquiry
+            bulk, bulk_reason = is_bulk_enquiry(phone, message_text, reply)
+            if bulk:
+                try:
+                    append_bulk_enquiry_to_sheet(
+                        phone=phone,
+                        customer_name=sender_name or ctx['customer_name'],
+                        product=ctx['product'],
+                        quantity=ctx['quantity'],
+                        state=ctx['state'],
+                        reason=bulk_reason
+                    )
+                    print(f"[KITPAK] Bulk enquiry logged for {phone}: {bulk_reason}")
+                except Exception as e:
+                    print(f"[KITPAK] Bulk enquiry log error: {e}")
+            else:
+                # General handoff
+                try:
+                    # Determine reason for handoff
+                    reason = 'General team handoff'
+                    msg_lower = message_text.lower()
+                    if any(w in msg_lower for w in ['call', 'phone', 'speak', 'talk', 'contact']):
+                        reason = 'Customer requested callback'
+                    elif any(w in msg_lower for w in ['return', 'refund', 'damage', 'wrong']):
+                        reason = 'Return/Refund request'
+                    elif any(w in msg_lower for w in ['mockup', 'design', 'logo', 'custom print']):
+                        reason = 'Custom print / Mockup request'
+                    elif any(w in msg_lower for w in ['kraft', 'paper bag', 'paper cover']):
+                        reason = 'Custom kraft/paper bag enquiry'
+
+                    append_handoff_to_sheet(
+                        phone=phone,
+                        customer_name=sender_name or ctx['customer_name'],
+                        reason=reason,
+                        last_message=message_text
+                    )
+                    print(f"[KITPAK] Handoff logged for {phone}: {reason}")
+                except Exception as e:
+                    print(f"[KITPAK] Handoff log error: {e}")
+
+        # ── Generate and send PI as PDF ──
+        if 'GENERATE_PI:' in reply:
+            try:
+                order = extract_order_details(reply)
+                if order:
+                    pdf_bytes = generate_pi_pdf(order)
+                    pdf_sent = send_whatsapp_pdf(
+                        phone,
+                        pdf_bytes,
+                        filename="KITPAK_ProformaInvoice.pdf",
+                        caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
+                    )
+                    order_total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
+                    pending_orders[phone] = {'total': order_total}
+                    print(f"[KITPAK] Pending order total for {phone}: Rs.{order_total}")
+
+                    try:
+                        append_order_to_sheet(phone, order)
+                    except Exception as se:
+                        print(f"[KITPAK] Sheets logging error: {se}")
+
+                    if not pdf_sent:
+                        pi_text = generate_pi_text(order)
+                        send_whatsapp_message(phone, pi_text)
+                        print(f"[KITPAK] PI sent as text fallback to {phone}")
+                    else:
+                        print(f"[KITPAK] PI PDF sent to {phone}")
+                else:
+                    send_whatsapp_message(phone, "Sorry, I had trouble generating your invoice. Our team will send it to you shortly.")
+                    send_owner_alert(f"PI generation failed for {phone} — please send manually.")
+            except Exception as e:
+                print(f"[KITPAK] PI generation error: {e}")
+                import traceback
+                traceback.print_exc()
+
+        return jsonify({'status': 'ok'}), 200
+
     except Exception as e:
-        print(f"[KITPAK] Payment info extraction error: {e}")
-        return {"amount": None, "upi_id": None, "status": "unclear"}
+        print(f"[KITPAK] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/sheet-notify', methods=['POST'])
+def sheet_notify():
+    """
+    Receives notification requests from Google Sheets Apps Script automation.
+    Uses approved WhatsApp templates — works outside the 24-hour session window.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'status': 'error', 'message': 'no data'}), 400
+
+        if SHEET_AUTOMATION_SECRET and data.get('secret') != SHEET_AUTOMATION_SECRET:
+            print("[KITPAK] Sheet-notify: unauthorized request (bad secret)")
+            return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+
+        msg_type = data.get('type')
+        phone = str(data.get('phone') or '').strip().replace('+', '').replace(' ', '')
+        if phone.endswith('.0'):
+            phone = phone[:-2]
+        if not phone:
+            return jsonify({'status': 'error', 'message': 'missing phone'}), 400
+        if not phone.startswith('91'):
+            phone = '91' + phone
+
+        customer_name = data.get('customer_name', 'Customer')
+
+        if msg_type == 'payment':
+            sent = send_whatsapp_template(phone, 'kitpak_payment_confirmed', [customer_name])
+            if not sent:
+                sent = send_whatsapp_message(phone,
+                    f"Hi {customer_name},\n\n"
+                    f"We have received your payment successfully. "
+                    f"Your order is now being processed and will be dispatched shortly.\n\n"
+                    f"Thank you for choosing KITPAK."
+                )
+
+        elif msg_type == 'dispatch':
+            tracking = data.get('tracking_number', '')
+            courier = data.get('courier_partner', '')
+            sent = send_whatsapp_template(phone, 'kitpak_dispatch_notification', [customer_name, courier, tracking])
+            if not sent:
+                sent = send_whatsapp_message(phone,
+                    f"Hi {customer_name},\n\n"
+                    f"Your KITPAK order has been dispatched.\n"
+                    f"Courier Partner: {courier}\n"
+                    f"Tracking Number: {tracking}\n\n"
+                    f"You can track your shipment using the above tracking number.\n\n"
+                    f"Thank you for choosing KITPAK."
+                )
+        else:
+            return jsonify({'status': 'error', 'message': 'unknown type'}), 400
+
+        print(f"[KITPAK] Sheet-notify ({msg_type}) to {phone}: {'sent' if sent else 'failed'}")
+        return jsonify({'status': 'ok' if sent else 'error'}), (200 if sent else 500)
+
+    except Exception as e:
+        print(f"[KITPAK] Sheet-notify error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/daily-report', methods=['GET', 'POST'])
+def trigger_daily_report():
+    try:
+        print("[KITPAK] Daily report triggered via cron")
+        success = append_daily_report(conversation_history)
+        if success:
+            send_owner_alert(f"Daily report sent to Google Sheets. Total conversations today: {len(conversation_history)}")
+            return jsonify({'status': 'ok', 'message': 'Daily report sent'}), 200
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to send report'}), 500
+    except Exception as e:
+        print(f"[KITPAK] Daily report trigger error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'KITPAK Abimanyu is live!'}), 200
+
+
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({'status': 'KITPAK Abimanyu is live!'}), 200
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
