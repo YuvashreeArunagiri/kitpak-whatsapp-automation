@@ -29,15 +29,22 @@ def _post_to_sheet(sheet_name: str, header: list, row: list) -> bool:
         return False
 
 
-def append_order_to_sheet(phone: str, order: dict) -> bool:
-    """Appends a confirmed order to the Orders sheet."""
+def generate_order_id(phone: str) -> str:
+    """Generate a unique order ID based on timestamp and last 4 digits of phone."""
+    now = datetime.now()
+    return f"KP-{now.strftime('%y%m%d')}-{phone[-4:]}"
+
+
+def append_order_to_sheet(phone: str, order: dict, order_id: str = '') -> bool:
+    """Appends a confirmed order to the Orders sheet with Order ID."""
     now = datetime.now().strftime('%d %b %Y %I:%M %p')
     items_str = ', '.join([f"{i['desc']} x{i['qty']}" for i in order.get('items', [])])
     total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
     return _post_to_sheet(
         sheet_name="Orders",
-        header=["Date", "Customer Name", "Phone", "Address", "Pincode", "State", "Items", "Total", "GSTIN", "Status"],
+        header=["Order ID", "Date", "Customer Name", "Phone", "Address", "Pincode", "State", "Items", "Total", "GSTIN", "Status"],
         row=[
+            order_id,
             now,
             order.get('customer_name', ''),
             phone,
