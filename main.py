@@ -12,7 +12,7 @@ from claude_service import get_claude_reply, extract_order_details, classify_ima
 from wati_service import send_whatsapp_message, send_whatsapp_template, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
 from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product
-from sheets_service import append_daily_report, append_order_to_sheet, append_handoff_to_sheet, append_bulk_enquiry_to_sheet
+from sheets_service import append_daily_report, append_order_to_sheet, append_handoff_to_sheet, append_bulk_enquiry_to_sheet, generate_order_id
 import threading
 import time
 
@@ -547,19 +547,21 @@ def webhook():
             try:
                 order = extract_order_details(reply)
                 if order:
+                    order_id = generate_order_id(phone)
+                    order['order_id'] = order_id
                     pdf_bytes = generate_pi_pdf(order)
                     pdf_sent = send_whatsapp_pdf(
                         phone,
                         pdf_bytes,
-                        filename="KITPAK_ProformaInvoice.pdf",
-                        caption="Here is your Proforma Invoice. Please pay via UPI and share the payment screenshot to confirm your order."
+                        filename=f"KITPAK_{order_id}.pdf",
+                        caption=f"Here is your Proforma Invoice ({order_id}). Please pay via UPI and share the payment screenshot to confirm your order."
                     )
                     order_total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
-                    pending_orders[phone] = {'total': order_total}
-                    print(f"[KITPAK] Pending order total for {phone}: Rs.{order_total}")
+                    pending_orders[phone] = {'total': order_total, 'order_id': order_id}
+                    print(f"[KITPAK] Order {order_id} for {phone}: Rs.{order_total}")
 
                     try:
-                        append_order_to_sheet(phone, order)
+                        append_order_to_sheet(phone, order, order_id)
                     except Exception as se:
                         print(f"[KITPAK] Sheets logging error: {se}")
 
