@@ -309,6 +309,13 @@ def webhook():
         if event_type != 'message':
             return jsonify({'status': 'ignored'}), 200
 
+        # ── Stop bot if conversation is assigned to a human agent ──
+        assigned_id = data.get('assignedId')
+        operator_name = data.get('operatorName')
+        if assigned_id or operator_name:
+            print(f'[KITPAK] Conversation assigned to human ({operator_name or assigned_id}) — bot skipping')
+            return jsonify({'status': 'ignored_assigned'}), 200
+
         # ── Ignore stale/replayed messages (older than 2 minutes) ──
         msg_timestamp = data.get('timestamp')
         if msg_timestamp:
@@ -375,7 +382,12 @@ def webhook():
                     file_type = classify_image(file_bytes, mime_type)
                     print(f"[KITPAK] File classified as: {file_type}")
 
-                if file_type == 'logo':
+                if file_type == 'unknown':
+                    # Cannot classify — ask customer
+                    conversation_history[phone].append({'role': 'user', 'content': '[Customer sent a file — type unclear]'})
+                    send_whatsapp_message(phone,
+                        "Could you let me know — is this a reference image of the product you want, or your logo/design file for printing?")
+                elif file_type == 'logo':
                     history_text = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])])
                     wants_mockup = any(word in history_text.lower() for word in ['mockup', 'mock up', 'sample', 'preview', 'design', 'custom print', 'printed cover', 'custom cover'])
 
