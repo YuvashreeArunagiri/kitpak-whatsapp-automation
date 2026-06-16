@@ -5,7 +5,13 @@ No OAuth needed — uses a deployed Apps Script web app URL.
 import os
 import re
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# India Standard Time (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def _ist_now() -> str:
+    return datetime.now(IST).strftime('%d %b %Y %I:%M %p')
 
 APPS_SCRIPT_URL = os.environ.get('GOOGLE_SHEETS_WEBHOOK_URL', '')
 
@@ -37,7 +43,7 @@ def generate_order_id(phone: str) -> str:
 
 def append_order_to_sheet(phone: str, order: dict, order_id: str = '') -> bool:
     """Appends a confirmed order to the Orders sheet with Order ID."""
-    now = datetime.now().strftime('%d %b %Y %I:%M %p')
+    now = _ist_now()
     items_str = ', '.join([f"{i['desc']} x{i['qty']}" for i in order.get('items', [])])
     total = sum(i['qty'] * i['rate'] for i in order.get('items', []))
     return _post_to_sheet(
@@ -64,7 +70,7 @@ def append_handoff_to_sheet(phone: str, customer_name: str, reason: str, last_me
     Logs a team-handoff conversation to the HandoffConversations sheet.
     Columns: Date | Customer Phone | Customer Name | Reason | Last Message | Status | Notes
     """
-    now = datetime.now().strftime('%d %b %Y %I:%M %p')
+    now = _ist_now()
     return _post_to_sheet(
         sheet_name="HandoffConversations",
         header=["Date", "Customer Phone", "Customer Name", "Reason", "Last Message", "Status", "Notes"],
@@ -85,7 +91,7 @@ def append_bulk_enquiry_to_sheet(phone: str, customer_name: str, product: str, q
     Logs a bulk enquiry to the BulkEnquiries sheet.
     Columns: Date | Customer Phone | Customer Name | Product Interest | Quantity | State | Reason | Status | Notes
     """
-    now = datetime.now().strftime('%d %b %Y %I:%M %p')
+    now = _ist_now()
     return _post_to_sheet(
         sheet_name="BulkEnquiries",
         header=["Date", "Customer Phone", "Customer Name", "Product Interest", "Quantity", "State", "Reason", "Status", "Notes"],
