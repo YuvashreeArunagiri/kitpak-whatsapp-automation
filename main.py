@@ -34,6 +34,12 @@ HANDOFF_PHRASES = [
     'our team will reach out',
     'our team will call you',
     'our team will get back',
+    'our team will prepare the mockup',
+    'our team will prepare a mockup',
+    'team will prepare the mockup',
+    'team will prepare a mockup',
+    'our team will send you',
+    'our team will share',
 ]
 
 # Keywords that suggest bulk order context
@@ -42,9 +48,11 @@ CUSTOM_BULK_KEYWORDS = ['above 1000', 'more than 1000', '2000', '3000', '4000', 
 
 
 def daily_report_scheduler():
-    """Background thread — sends daily report to Google Sheets at 6 PM."""
+    """Background thread — sends daily report to Google Sheets at 6 PM IST."""
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
     while True:
-        now = datetime.now()
+        now = datetime.now(IST)
         if now.hour == 18 and now.minute == 0:
             print("[KITPAK] Sending daily report to Google Sheets...")
             append_daily_report(conversation_history)
@@ -321,7 +329,7 @@ def webhook():
         if msg_timestamp:
             try:
                 age_seconds = time.time() - int(msg_timestamp)
-                if age_seconds > 120:
+                if age_seconds > 300:
                     print(f"[KITPAK] Ignoring stale message (age {int(age_seconds)}s): {data.get('text')}")
                     return jsonify({'status': 'ignored_stale'}), 200
             except (ValueError, TypeError):
@@ -402,6 +410,16 @@ def webhook():
                             f"Mockup request from {sender_name} ({phone}). "
                             f"Customer has sent their logo/design file — please prepare the mockup and share it with them.")
                         print(f"[KITPAK] Mockup request alerted to owner for {phone}")
+                        # Log to HandoffConversations
+                        try:
+                            append_handoff_to_sheet(
+                                phone=phone,
+                                customer_name=sender_name,
+                                reason='Custom print request — logo file received',
+                                last_message='[Customer sent logo/design file]'
+                            )
+                        except Exception as e:
+                            print(f"[KITPAK] Handoff log error (logo): {e}")
 
                 else:
                     print(f"[KITPAK] Payment screenshot received from {phone}")
@@ -501,6 +519,7 @@ def webhook():
         if is_handoff(reply):
             sender_name = data.get('senderName', '')
             ctx = extract_context_from_history(phone)
+            full_history_text = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])]).lower()
 
             # Check if this is a bulk enquiry
             bulk, bulk_reason = is_bulk_enquiry(phone, message_text, reply)
@@ -518,19 +537,20 @@ def webhook():
                 except Exception as e:
                     print(f"[KITPAK] Bulk enquiry log error: {e}")
             else:
-                # General handoff
+                # General handoff — check both message and full history for reason
                 try:
-                    # Determine reason for handoff
                     reason = 'General team handoff'
-                    msg_lower = message_text.lower()
-                    if any(w in msg_lower for w in ['call', 'phone', 'speak', 'talk', 'contact']):
+                    check_text = (message_text + ' ' + full_history_text).lower()
+                    if any(w in check_text for w in ['call', 'phone', 'speak', 'talk', 'contact']):
                         reason = 'Customer requested callback'
-                    elif any(w in msg_lower for w in ['return', 'refund', 'damage', 'wrong']):
+                    elif any(w in check_text for w in ['return', 'refund', 'damage', 'wrong']):
                         reason = 'Return/Refund request'
-                    elif any(w in msg_lower for w in ['mockup', 'design', 'logo', 'custom print']):
-                        reason = 'Custom print / Mockup request'
-                    elif any(w in msg_lower for w in ['kraft', 'paper bag', 'paper cover']):
+                    elif any(w in check_text for w in ['mockup', 'design', 'logo', 'custom print', 'printed cover', 'custom cover']):
+                        reason = 'Custom print request'
+                    elif any(w in check_text for w in ['kraft', 'paper bag', 'paper cover']):
                         reason = 'Custom kraft/paper bag enquiry'
+                    elif any(w in check_text for w in ['honeycomb sleeve', 'sleeve']):
+                        reason = 'Honeycomb sleeve enquiry'
 
                     append_handoff_to_sheet(
                         phone=phone,
