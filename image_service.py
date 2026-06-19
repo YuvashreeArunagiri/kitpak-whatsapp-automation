@@ -286,3 +286,85 @@ def get_images_from_message(message: str) -> list:
     if product_key:
         return get_images_for_product(product_key)
     return []
+
+# ═══════════════════════════════════════════════════════════
+# PRICE CHART IMAGES — sent when customer asks for price/rate
+# ═══════════════════════════════════════════════════════════
+
+PRICE_CHART_IMAGES = {
+    "white_cover_100": ["white_cover_price_100.png"],
+    "white_cover_1000": ["white_cover_price_1000.png"],
+    "colour_cover_100": ["colour_cover_price_100.png"],
+    "colour_cover_1000": ["colour_cover_price_1000.png"],
+    "kraft_bag": ["kraft_bag_price.png"],
+    "packing_cover_100": ["packing_cover_price_100.png"],
+    "packing_cover_500": ["packing_cover_price_500.png"],
+    "honeycomb_roll": ["honeycomb_roll_price.png"],
+    "honeycomb_sleeve": ["honeycomb_sleeve_price.png"],
+    "thermal_label_roll": ["thermal_label_roll_price.png"],
+    "thermal_label_a4": ["thermal_label_a4_price.png"],
+    "custom_white_100": ["custom_white_price_100.png"],
+    "custom_white_1000": ["custom_white_price_1000.png"],
+    "custom_colour_100": ["custom_colour_price_100.png"],
+    "custom_colour_1000": ["custom_colour_price_1000.png"],
+    "meesho": ["meesho_price.png"],
+    "flipkart": ["flipkart_price.png"],
+    "amazon": ["amazon_price.png"],
+}
+
+# Words that indicate the customer wants pricing/rate info (not product photos)
+PRICE_REQUEST_WORDS = ["price", "rate", "cost", "how much", "price list", "rate list", "pricing", "charges"]
+
+
+def get_price_chart_key(message: str) -> str | None:
+    """Match a customer message to a price chart key based on product + MOQ context."""
+    message_lower = message.lower()
+
+    is_custom = any(w in message_lower for w in ["custom", "print", "logo", "design"])
+    is_colour = any(w in message_lower for w in ["colour", "color", "black", "pink", "purple"])
+    is_1000 = "1000" in message_lower or "bulk" in message_lower
+    is_500 = "500" in message_lower
+
+    if "meesho" in message_lower:
+        return "meesho"
+    if "flipkart" in message_lower:
+        return "flipkart"
+    if "amazon" in message_lower:
+        return "amazon"
+    if "kraft" in message_lower or "paper bag" in message_lower:
+        return "kraft_bag"
+    if "honeycomb roll" in message_lower or "honeycomb paper roll" in message_lower:
+        return "honeycomb_roll"
+    if "honeycomb sleeve" in message_lower:
+        return "honeycomb_sleeve"
+    if "thermal label roll" in message_lower or "label roll" in message_lower:
+        return "thermal_label_roll"
+    if "a4" in message_lower and "label" in message_lower:
+        return "thermal_label_a4"
+    if "packing cover" in message_lower or "transparent" in message_lower:
+        return "packing_cover_500" if is_500 else "packing_cover_100"
+
+    if is_custom and is_colour:
+        return "custom_colour_1000" if is_1000 else "custom_colour_100"
+    if is_custom:
+        return "custom_white_1000" if is_1000 else "custom_white_100"
+    if is_colour:
+        return "colour_cover_1000" if is_1000 else "colour_cover_100"
+    if "cover" in message_lower or "courier" in message_lower or "bag" in message_lower:
+        return "white_cover_1000" if is_1000 else "white_cover_100"
+
+    return None
+
+
+def get_price_chart_images(message: str) -> list:
+    """Get price chart image filenames for a customer's pricing query."""
+    key = get_price_chart_key(message)
+    if key:
+        return PRICE_CHART_IMAGES.get(key, [])
+    return []
+
+
+def is_price_request(message: str) -> bool:
+    """Check if a message is asking for price/rate information."""
+    message_lower = message.lower()
+    return any(word in message_lower for word in PRICE_REQUEST_WORDS)
