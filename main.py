@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from claude_service import get_claude_reply, extract_order_details, classify_image, extract_payment_info
 from wati_service import send_whatsapp_message, send_whatsapp_template, send_product_images, send_whatsapp_pdf
 from pi_service import generate_pi_text, generate_pi_pdf
-from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product
+from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product, get_price_chart_images, is_price_request
 from sheets_service import append_daily_report, append_order_to_sheet, append_handoff_to_sheet, append_bulk_enquiry_to_sheet, generate_order_id
 import threading
 import time
@@ -185,15 +185,12 @@ def handle_team_command(phone: str, message: str) -> bool:
     msg = message.strip().upper()
 
     if msg.startswith("CONFIRM "):
-        customer_phone = message.strip().split(" ", 1)[1].strip().replace("+", "").replace(" ", "")
-        if not customer_phone.startswith("91"):
-            customer_phone = "91" + customer_phone
-        send_whatsapp_message(customer_phone,
-            "Great news! Your payment has been verified and confirmed. "
-            "Your order is now being processed. "
-            "We will share the dispatch and tracking details shortly. "
-            "Thank you for choosing KITPAK!")
-        send_owner_alert(f"Done! Confirmation sent to {customer_phone}.")
+        # Payment confirmation now ONLY happens via Google Sheet (OrderTracking tab).
+        # This WhatsApp command is disabled to prevent premature confirmation messages.
+        send_owner_alert(
+            "Note: CONFIRM via WhatsApp is disabled. "
+            "Please update Payment Status to CONFIRMED in the OrderTracking Google Sheet instead — "
+            "this will automatically send the confirmation message to the customer.")
         return True
 
     if msg.startswith("DISPATCH "):
@@ -226,11 +223,10 @@ def handle_team_command(phone: str, message: str) -> bool:
     if msg == "HELP":
         send_owner_alert(
             "KITPAK Team Commands:\n\n"
-            "CONFIRM <phone> — Confirm payment and order\n"
+            "Payment confirmation: Update Payment Status to CONFIRMED in the OrderTracking Google Sheet (NOT via WhatsApp)\n"
             "DISPATCH <phone> <tracking> — Send dispatch details\n"
             "CANCEL <phone> — Cancel order\n\n"
             "Example:\n"
-            "CONFIRM 9876543210\n"
             "DISPATCH 9876543210 ST123456789")
         return True
 
@@ -486,6 +482,13 @@ def webhook():
         reply = get_claude_reply(history)
 
         conversation_history[phone].append({'role': 'assistant', 'content': reply})
+
+        # ── Send price chart image if customer is asking for pricing ──
+        if is_price_request(message_text):
+            price_images = get_price_chart_images(message_text)
+            if price_images:
+                send_product_images(phone, price_images)
+                print(f"[KITPAK] Price chart image sent to {phone}")
 
         # ── Send product images if this is a product enquiry or picture request ──
         images = get_images_from_message(message_text)
