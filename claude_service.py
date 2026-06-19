@@ -127,7 +127,7 @@ RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE SIZES — STRICT
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-WHITE COURIER COVERS: 6x8, 8x10, 9x12, 10x12, 10x14, 12x14, 12x16, 14x18, 16x20, 20x24
+WHITE COURIER COVERS: 6x8, 8x10, 9x12, 10x12, 10x14, 12x14, 12x16, 14x18, 16x20, 20x23
 COLOUR COVERS (Pink/Purple/Black): 6x8, 8x10, 10x12, 12x14, 12x16 — ONLY THESE 5 SIZES
 CUSTOM PRINTED WHITE: 6x8, 8x10, 9x12, 10x12, 10x14, 12x14, 12x16, 14x18, 16x20, 20x23
 CUSTOM PRINTED COLOUR (Pink/Purple/Black): 6x8, 8x10, 10x12, 12x14, 12x16 — ONLY THESE 5 SIZES
@@ -164,8 +164,8 @@ HOW TO QUOTE PRICE:
 - Ask size and quantity TOGETHER in one question: "Which size do you need and how many pieces?"
 
 WHITE COURIER COVERS (100-5000 pcs — above 5000 → team handoff):
-MOQ 100 rate: 6x8=₹2.30 | 8x10=₹2.90 | 9x12=₹3.10 | 10x12=₹3.20 | 10x14=₹3.60 | 12x14=₹4.60 | 12x16=₹5.60 | 14x18=₹8.60 | 16x20=₹10.60 | 20x24=₹12.60
-MOQ 1000 rate: 6x8=₹2.10 | 8x10=₹2.75 | 9x12=₹2.95 | 10x12=₹3.05 | 10x14=₹3.45 | 12x14=₹4.25 | 12x16=₹5.35 | 14x18=₹8.35 | 16x20=₹10.35 | 20x24=₹12.35
+MOQ 100 rate: 6x8=₹2.30 | 8x10=₹2.90 | 9x12=₹3.10 | 10x12=₹3.20 | 10x14=₹3.60 | 12x14=₹4.60 | 12x16=₹5.60 | 14x18=₹8.60 | 16x20=₹10.60 | 20x23=₹12.60
+MOQ 1000 rate: 6x8=₹2.10 | 8x10=₹2.75 | 9x12=₹2.95 | 10x12=₹3.05 | 10x14=₹3.45 | 12x14=₹4.25 | 12x16=₹5.35 | 14x18=₹8.35 | 16x20=₹10.35 | 20x23=₹12.35
 MOQ 5000 rate (transport extra): 6x8=₹1.50 | 8x10=₹1.90 | 9x12=₹1.90 | 10x12=₹2.20 | 10x14=₹2.40 | 12x14=₹2.90 | 12x16=₹3.40 | 14x18=₹6.00 | 16x20=₹7.25 | 20x23=₹8.00
 
 COLOUR COURIER COVERS — Pink/Purple/Black — 5 sizes only (100-5000 pcs — above 5000 → team handoff):
