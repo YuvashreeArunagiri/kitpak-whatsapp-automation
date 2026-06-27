@@ -353,7 +353,8 @@ def get_price_chart_key(message: str) -> str | None:
     if "cover" in message_lower or "courier" in message_lower or "bag" in message_lower:
         return "white_cover_1000" if is_1000 else "white_cover_100"
 
-    return None
+    # Default — no product context found, send white cover 100 pcs as default
+    return "white_cover_100"
 
 
 def get_price_chart_images(message: str) -> list:
