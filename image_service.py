@@ -316,14 +316,16 @@ PRICE_CHART_IMAGES = {
 PRICE_REQUEST_WORDS = ["price", "rate", "cost", "how much", "price list", "rate list", "pricing", "charges"]
 
 
-def get_price_chart_key(message: str) -> str | None:
-    """Match a customer message to a price chart key based on product + MOQ context."""
+def get_price_chart_key(message: str, current_message: str = None) -> str | None:
+    """Match a customer message to a price chart key based on product context.
+    current_message: the actual customer message (used for quantity tier detection only)
+    message: combined message + history (used for product detection)
+    """
     message_lower = message.lower()
-
-    is_custom = any(w in message_lower for w in ["custom", "print", "logo", "design"])
-    is_colour = any(w in message_lower for w in ["colour", "color", "black", "pink", "purple"])
-    is_1000 = "1000" in message_lower or "bulk" in message_lower
-    is_500 = "500" in message_lower
+    # Only check current message for quantity tier — not history
+    tier_text = (current_message or message).lower()
+    is_1000 = "1000" in tier_text and "bulk" in tier_text or tier_text.strip() in ["1000", "1000 pcs", "1000 covers"]
+    is_500 = "500" in tier_text and "packing" in tier_text
 
     if "meesho" in message_lower:
         return "meesho"
@@ -357,9 +359,9 @@ def get_price_chart_key(message: str) -> str | None:
     return "white_cover_100"
 
 
-def get_price_chart_images(message: str) -> list:
+def get_price_chart_images(message: str, current_message: str = None) -> list:
     """Get price chart image filenames for a customer's pricing query."""
-    key = get_price_chart_key(message)
+    key = get_price_chart_key(message, current_message)
     if key:
         return PRICE_CHART_IMAGES.get(key, [])
     return []
