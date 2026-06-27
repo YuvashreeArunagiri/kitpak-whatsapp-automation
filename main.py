@@ -267,25 +267,29 @@ def webhook():
     conversation_history[phone].append({'role': 'user', 'content': message_text})
 
     # Send price chart image if customer asks for pricing
+    # Send product/price images only when explicitly requested, not on pure greetings
+    is_pure_greeting = message_text.strip().lower() in ['hi', 'hello', 'hey', 'hii', 'helo', 'hai', 'vanakkam', 'namaste', 'good morning', 'good evening', 'good afternoon']
     price_requested = is_price_request(message_text)
-    if price_requested:
-        price_images = get_price_chart_images(message_text)
-        if price_images:
-            send_product_images(phone, price_images)
-            print(f"[KITPAK] Price chart image sent to {phone}")
-    else:
-        # Send product images if picture requested
-        images = get_images_from_message(message_text)
-        picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
-        if not images and picture_requested:
-            for past_msg in reversed(conversation_history[phone][:-1][-6:]):
-                past_product = get_product_key_from_message(past_msg.get('content', ''))
-                if past_product:
-                    images = get_images_for_product(past_product)
-                    break
-        if images:
-            send_product_images(phone, images)
-            print(f"[KITPAK] Product images sent to {phone}")
+
+    if not is_pure_greeting:
+        if price_requested:
+            price_images = get_price_chart_images(message_text)
+            if price_images:
+                send_product_images(phone, price_images)
+                print(f"[KITPAK] Price chart image sent to {phone}")
+        else:
+            # Send product images if picture requested
+            images = get_images_from_message(message_text)
+            picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
+            if not images and picture_requested:
+                for past_msg in reversed(conversation_history[phone][:-1][-6:]):
+                    past_product = get_product_key_from_message(past_msg.get('content', ''))
+                    if past_product:
+                        images = get_images_for_product(past_product)
+                        break
+            if images:
+                send_product_images(phone, images)
+                print(f"[KITPAK] Product images sent to {phone}")
 
     # Get Claude reply
     try:
