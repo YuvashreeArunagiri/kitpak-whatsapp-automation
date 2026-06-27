@@ -199,7 +199,7 @@ def webhook():
     try:
         timestamp = int(data.get('timestamp', 0))
         age_seconds = time.time() - timestamp
-        if age_seconds > 300:
+        if age_seconds > 600:
             print(f"[KITPAK] Ignoring stale message (age {int(age_seconds)}s): {data.get('text')}")
             return jsonify({'status': 'ignored_stale'}), 200
     except Exception:
