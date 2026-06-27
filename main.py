@@ -276,7 +276,7 @@ def webhook():
             # Build context from conversation history for better price chart matching
             history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
             combined_text = message_text + ' ' + history_text
-            price_images = get_price_chart_images(combined_text)
+            price_images = get_price_chart_images(combined_text, message_text)
             if price_images:
                 send_product_images(phone, price_images)
                 print(f"[KITPAK] Price chart image sent to {phone}")
