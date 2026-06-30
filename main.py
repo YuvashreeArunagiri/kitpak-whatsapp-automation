@@ -56,7 +56,7 @@ def send_owner_alert(message: str):
         send_whatsapp_template(
             OWNER_PHONE,
             'kitpak_owner_alert',
-            [{'name': 'body', 'text': message}]
+            [message]
         )
     except Exception as e:
         print(f"[KITPAK] Owner alert error: {e}")
@@ -141,11 +141,7 @@ def handle_owner_command(message: str) -> bool:
         send_whatsapp_template(
             customer_phone,
             'kitpak_dispatch_notification',
-            [
-                {'name': 'body', 'text': 'Customer'},
-                {'name': 'body', 'text': 'our courier partner'},
-                {'name': 'body', 'text': tracking}
-            ]
+            ['Customer', 'our courier partner', tracking]
         )
         send_owner_alert(f"Dispatch notification sent to {customer_phone}. Tracking: {tracking}")
         return True
@@ -403,7 +399,7 @@ def sheet_notify():
         send_whatsapp_template(
             phone,
             'kitpak_payment_confirmed',
-            [{'name': 'body', 'text': customer_name}]
+            [customer_name]
         )
         print(f"[KITPAK] Payment confirmed sent to {phone}")
 
@@ -413,11 +409,7 @@ def sheet_notify():
         send_whatsapp_template(
             phone,
             'kitpak_dispatch_notification',
-            [
-                {'name': 'body', 'text': customer_name},
-                {'name': 'body', 'text': courier},
-                {'name': 'body', 'text': tracking}
-            ]
+            [customer_name, courier, tracking]
         )
         print(f"[KITPAK] Dispatch notification sent to {phone}")
 
