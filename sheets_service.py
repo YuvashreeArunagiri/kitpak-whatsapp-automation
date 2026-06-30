@@ -127,3 +127,62 @@ def append_daily_report(conversation_history: dict) -> bool:
         header=["Date", "Time", "Total Conversations", "Orders Placed", "Enquiries Only", "Notes"],
         row=[today, now, total_conversations, orders_placed, enquiries, '']
     )
+
+
+def upsert_lead_to_sheet(
+    phone: str,
+    customer_name: str = '',
+    product_interested: str = '',
+    source: str = '',
+    ad_campaign: str = '',
+    first_message: str = '',
+    lead_type: str = 'New Lead'
+) -> bool:
+    """
+    Create or update a lead row in the LeadTracker sheet, keyed by WhatsApp number.
+    If the number already exists, only the 'latest message' and 'last follow-up date'
+    style fields are refreshed — staff-managed fields (stage, quality, notes, etc.)
+    are left untouched by Apps Script logic on the sheet side.
+    """
+    now = datetime.now(IST)
+    date_str = now.strftime('%d %b %Y')
+    time_str = now.strftime('%I:%M %p')
+
+    if not APPS_SCRIPT_URL:
+        print("[KITPAK] GOOGLE_SHEETS_WEBHOOK_URL not set — skipping lead log")
+        return False
+    try:
+        payload = {
+            "sheet": "LeadTracker",
+            "action": "upsert_lead",
+            "phone": phone,
+            "row": {
+                "Lead Date": date_str,
+                "Lead Time": time_str,
+                "Customer Name": customer_name or '',
+                "WhatsApp Number": phone,
+                "Product Interested": product_interested or '',
+                "Ad / Campaign Name": ad_campaign or '',
+                "Source": source or 'Direct/Organic',
+                "First Message Received": first_message or '',
+                "Lead Type": lead_type,
+                "Lead Stage": "New",
+                "Lead Quality": "",
+                "Staff Assigned": "",
+                "Last Follow-up Date": date_str,
+                "Next Follow-up Date": "",
+                "Notes / Remarks": "",
+                "Order Value": "",
+                "Payment Status": "Not Started",
+                "Final Status": "",
+                "Reason for Lost": "",
+                "Updated By": "Bot",
+                "Last Updated Date": date_str
+            }
+        }
+        response = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15)
+        print(f"[KITPAK] LeadTracker upsert response: {response.status_code} - {response.text[:200]}")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"[KITPAK] LeadTracker upsert error: {e}")
+        return False
