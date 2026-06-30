@@ -266,21 +266,31 @@ def webhook():
 
     conversation_history[phone].append({'role': 'user', 'content': message_text})
 
-    # Send price chart image if customer asks for pricing
-    # Send product/price images only when explicitly requested, not on pure greetings
+    # Get Claude reply
+    try:
+        reply = get_claude_reply(conversation_history[phone])
+    except Exception as e:
+        print(f"[KITPAK] Error: {e}")
+        reply = "Our team will get in touch with you shortly."
+
+    conversation_history[phone].append({'role': 'assistant', 'content': reply})
+
+    # Send price/product images alongside the reply whenever relevant —
+    # either the customer asked for price, or the bot is sending a product link.
     is_pure_greeting = message_text.strip().lower() in ['hi', 'hello', 'hey', 'hii', 'helo', 'hai', 'vanakkam', 'namaste', 'good morning', 'good evening', 'good afternoon']
     price_requested = is_price_request(message_text)
+    bot_sent_link = 'kitpak.in' in reply.lower()
 
     if not is_pure_greeting:
-        if price_requested:
-            # Build context from conversation history for better price chart matching
-            history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
-            combined_text = message_text + ' ' + history_text
+        history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
+        combined_text = message_text + ' ' + history_text
+
+        if price_requested or bot_sent_link:
             price_images = get_price_chart_images(combined_text, message_text)
             if price_images:
                 send_product_images(phone, price_images)
                 print(f"[KITPAK] Price chart image sent to {phone}")
-        else:
+        elif True:
             # Send product images if picture requested
             images = get_images_from_message(message_text)
             picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
@@ -293,15 +303,6 @@ def webhook():
             if images:
                 send_product_images(phone, images)
                 print(f"[KITPAK] Product images sent to {phone}")
-
-    # Get Claude reply
-    try:
-        reply = get_claude_reply(conversation_history[phone])
-    except Exception as e:
-        print(f"[KITPAK] Error: {e}")
-        reply = "Our team will get in touch with you shortly."
-
-    conversation_history[phone].append({'role': 'assistant', 'content': reply})
 
     # Send reply
     print(f"[KITPAK] Sending message length: {len(reply)}")
