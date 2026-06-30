@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify
 
 from claude_service import get_claude_reply, classify_image
 from wati_service import send_whatsapp_message, send_whatsapp_template, send_product_images
-from sheets_service import append_handoff_to_sheet, append_bulk_enquiry_to_sheet, append_daily_report
+from sheets_service import append_handoff_to_sheet, append_bulk_enquiry_to_sheet, append_daily_report, upsert_lead_to_sheet
 from image_service import get_images_from_message, get_product_key_from_message, get_images_for_product, get_price_chart_images, is_price_request
 
 app = Flask(__name__)
@@ -218,7 +218,8 @@ def webhook():
             return jsonify({'status': 'owner_command'}), 200
 
     # Init conversation history
-    if phone not in conversation_history:
+    is_new_conversation = phone not in conversation_history
+    if is_new_conversation:
         conversation_history[phone] = []
 
     # ── Handle file/image uploads ──
@@ -266,6 +267,25 @@ def webhook():
 
     conversation_history[phone].append({'role': 'user', 'content': message_text})
 
+    # Log new lead to LeadTracker on the very first message of a conversation
+    if is_new_conversation:
+        source_url = data.get('sourceUrl', '') or ''
+        source = 'Meta Ads' if source_url else 'Direct/Organic'
+        ad_campaign = data.get('sourceId', '') or ''
+        try:
+            upsert_lead_to_sheet(
+                phone=phone,
+                customer_name=sender_name,
+                product_interested='',
+                source=source,
+                ad_campaign=ad_campaign,
+                first_message=message_text,
+                lead_type='New Lead'
+            )
+            print(f"[KITPAK] Lead logged for {phone} (source: {source})")
+        except Exception as e:
+            print(f"[KITPAK] Lead logging error: {e}")
+
     # Get Claude reply
     try:
         reply = get_claude_reply(conversation_history[phone])
@@ -309,7 +329,7 @@ def webhook():
     send_whatsapp_message(phone, reply)
     print(f"[KITPAK] Replied to {phone}: {reply[:80]}")
 
-    # Log handoff to Google Sheets
+    # Log handoff to Google Sheets + alert owner
     if is_handoff(reply):
         full_history_text = ' '.join([m.get('content', '') for m in conversation_history.get(phone, [])]).lower()
         bulk, bulk_reason = is_bulk_enquiry(phone, message_text, reply)
@@ -328,9 +348,12 @@ def webhook():
                 print(f"[KITPAK] Bulk enquiry logged for {phone}: {bulk_reason}")
             except Exception as e:
                 print(f"[KITPAK] Bulk enquiry log error: {e}")
+            send_owner_alert(
+                f"Bulk enquiry handoff: {sender_name or 'Customer'} ({phone}). "
+                f"{bulk_reason}. Last message: {message_text[:150]}")
         else:
+            reason = 'General team handoff'
             try:
-                reason = 'General team handoff'
                 check_text = (message_text + ' ' + full_history_text).lower()
                 if any(w in check_text for w in ['call', 'phone', 'speak', 'talk', 'contact']):
                     reason = 'Customer requested callback'
@@ -351,6 +374,9 @@ def webhook():
                 print(f"[KITPAK] Handoff logged for {phone}: {reason}")
             except Exception as e:
                 print(f"[KITPAK] Handoff log error: {e}")
+            send_owner_alert(
+                f"Handoff: {sender_name or 'Customer'} ({phone}). "
+                f"{reason}. Last message: {message_text[:150]}")
 
     return jsonify({'status': 'ok'}), 200
 
