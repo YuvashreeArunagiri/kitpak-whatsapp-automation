@@ -326,7 +326,7 @@ def get_price_chart_key(message: str, current_message: str = None) -> str | None
     tier_text = (current_message or message).lower()
     is_1000 = "1000" in tier_text and "bulk" in tier_text or tier_text.strip() in ["1000", "1000 pcs", "1000 covers"]
     is_500 = "500" in tier_text and "packing" in tier_text
-    is_custom = any(w in message_lower for w in ["custom", "print", "logo", "design", "printed"])
+    is_custom = any(w in tier_text for w in ["custom", "print", "logo", "design", "printed"])
     is_colour = any(w in message_lower for w in ["colour", "color", "black", "pink", "purple"])
 
     if "meesho" in message_lower:
