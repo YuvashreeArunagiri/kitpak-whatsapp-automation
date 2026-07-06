@@ -300,13 +300,23 @@ def webhook():
     if not is_pure_greeting:
         history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
         combined_text = message_text + ' ' + history_text
+        price_chart_sent = False
 
-        if price_requested or bot_sent_link:
+        if price_requested:
             price_images = get_price_chart_images(combined_text, message_text)
             if price_images:
                 send_product_images(phone, price_images)
                 print(f"[KITPAK] Price chart image sent to {phone}")
-        elif True:
+                price_chart_sent = True
+
+        if not price_chart_sent and bot_sent_link:
+            price_images = get_price_chart_images(combined_text, message_text)
+            if price_images:
+                send_product_images(phone, price_images)
+                print(f"[KITPAK] Price chart image sent with link to {phone}")
+                price_chart_sent = True
+
+        if not price_chart_sent:
             # Send product images if picture requested
             images = get_images_from_message(message_text)
             picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
