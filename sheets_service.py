@@ -136,7 +136,8 @@ def upsert_lead_to_sheet(
     source: str = '',
     ad_campaign: str = '',
     first_message: str = '',
-    lead_type: str = 'New Lead'
+    lead_type: str = 'New Lead',
+    force_new: bool = False
 ) -> bool:
     """
     Create or update a lead row in the LeadTracker sheet, keyed by WhatsApp number.
@@ -156,6 +157,7 @@ def upsert_lead_to_sheet(
             "sheet": "LeadTracker",
             "action": "upsert_lead",
             "phone": phone,
+            "force_new": force_new,
             "row": {
                 "Lead Date": date_str,
                 "Lead Time": time_str,
