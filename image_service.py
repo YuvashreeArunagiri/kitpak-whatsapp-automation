@@ -317,47 +317,65 @@ PRICE_REQUEST_WORDS = ["price", "rate", "cost", "how much", "price list", "rate 
 
 
 def get_price_chart_key(message: str, current_message: str = None) -> str | None:
-    """Match a customer message to a price chart key based on product context.
-    current_message: the actual customer message (used for quantity tier detection only)
-    message: combined message + history (used for product detection)
-    """
+    """Match a customer message to a price chart key based on product context."""
     message_lower = message.lower()
-    # Only check current message for quantity tier — not history
-    tier_text = (current_message or message).lower()
-    is_1000 = "1000" in tier_text and "bulk" in tier_text or tier_text.strip() in ["1000", "1000 pcs", "1000 covers"]
-    is_500 = "500" in tier_text and "packing" in tier_text
-    is_custom = any(w in tier_text for w in ["custom", "print", "logo", "design", "printed"])
-    is_colour = any(w in message_lower for w in ["colour", "color", "black", "pink", "purple"])
+    cur = (current_message or message).lower()
 
+    # Quantity tier — only from current message
+    is_1000 = "1000" in cur and any(w in cur for w in ["pcs", "pieces", "covers", "bags", "bulk"])
+    is_500 = "500" in cur and "packing" in cur
+
+    # Custom/printed — only from current message
+    is_custom = any(w in cur for w in ["custom", "printed", "print", "logo", "design"])
+    # Colour — current message takes priority; if current says "white" explicitly, not colour
+    is_white_explicit = "white" in cur
+    is_colour = any(w in cur for w in ["colour", "color", "black", "pink", "purple"]) and not is_white_explicit
+
+    # Platform covers — most specific first
     if "meesho" in message_lower:
         return "meesho"
     if "flipkart" in message_lower:
         return "flipkart"
     if "amazon" in message_lower:
         return "amazon"
-    if "kraft" in message_lower or "paper bag" in message_lower:
-        return "kraft_bag"
-    if "honeycomb roll" in message_lower or "honeycomb paper roll" in message_lower:
+
+    # Honeycomb — only when explicitly mentioned
+    if "honeycomb roll" in message_lower or ("honeycomb" in message_lower and "roll" in message_lower):
         return "honeycomb_roll"
-    if "honeycomb sleeve" in message_lower:
+    if "honeycomb sleeve" in message_lower or ("honeycomb" in message_lower and "sleeve" in message_lower):
         return "honeycomb_sleeve"
-    if "thermal label roll" in message_lower or "label roll" in message_lower:
+    if "honeycomb" in message_lower:
+        return "honeycomb_roll"  # default honeycomb to roll
+
+    # Labels — only when explicitly mentioned
+    if "label" in message_lower or "waybill" in message_lower or "sticker" in message_lower:
+        if "a4" in message_lower:
+            return "thermal_label_a4"
         return "thermal_label_roll"
-    if "a4" in message_lower and "label" in message_lower:
-        return "thermal_label_a4"
-    if "packing cover" in message_lower or "transparent" in message_lower:
+
+    # Kraft/paper bag — only when explicitly mentioned
+    if "kraft" in message_lower or "paper bag" in message_lower or "paper courier" in message_lower:
+        return "kraft_bag"
+
+    # Packing/transparent covers — only when explicitly mentioned
+    if "packing cover" in message_lower or ("transparent" in message_lower and "cover" in message_lower):
         return "packing_cover_500" if is_500 else "packing_cover_100"
 
-    if is_custom and is_colour:
-        return "custom_colour_1000" if is_1000 else "custom_colour_100"
+    # Custom printed covers — check before plain
     if is_custom:
+        if is_colour:
+            return "custom_colour_1000" if is_1000 else "custom_colour_100"
         return "custom_white_1000" if is_1000 else "custom_white_100"
+
+    # Plain colour covers
     if is_colour:
         return "colour_cover_1000" if is_1000 else "colour_cover_100"
-    if "cover" in message_lower or "courier" in message_lower or "bag" in message_lower:
+
+    # Plain white covers — only if "cover", "courier", "bag", "mailer" mentioned
+    if any(w in message_lower for w in ["cover", "courier", "bag", "mailer", "poly"]):
         return "white_cover_1000" if is_1000 else "white_cover_100"
 
-    # Default — no product context found, send white cover 100 pcs as default
+    # Default — white 100 pcs (only for explicit price requests)
     return "white_cover_100"
 
 
