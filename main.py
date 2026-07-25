@@ -339,6 +339,13 @@ def webhook():
     except Exception as e:
         print(f"[KITPAK] Error: {e}")
         reply = "Our team will get in touch with you shortly."
+        # Even on Claude failure, send price chart if customer asked for price
+        if is_price_request(message_text):
+            history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
+            price_images = get_price_chart_images(message_text + ' ' + history_text, message_text)
+            if price_images:
+                send_product_images(phone, price_images)
+                print(f"[KITPAK] Price chart sent on fallback to {phone}")
 
     conversation_history[phone].append({'role': 'assistant', 'content': reply})
 
