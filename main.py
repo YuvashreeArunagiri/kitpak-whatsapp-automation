@@ -349,34 +349,37 @@ def webhook():
 
     conversation_history[phone].append({'role': 'assistant', 'content': reply})
 
-    # ── Send price chart / product images ──
+    # ── Send price chart / product images (only once per turn) ──
     is_pure_greeting = message_text.strip().lower() in [
         'hi', 'hello', 'hey', 'hii', 'helo', 'hai', 'vanakkam', 'namaste',
-        'good morning', 'good evening', 'good afternoon'
+        'good morning', 'good evening', 'good afternoon', 'hlo', 'helo'
     ]
     price_requested = is_price_request(message_text)
     bot_sent_link = 'kitpak.in' in reply.lower()
+    image_sent = False
 
     if not is_pure_greeting:
         history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
         combined_text = message_text + ' ' + history_text
-        price_chart_sent = False
 
-        if price_requested:
+        # Priority 1: price chart if price was asked
+        if price_requested and not image_sent:
             price_images = get_price_chart_images(combined_text, message_text)
             if price_images:
                 send_product_images(phone, price_images)
                 print(f"[KITPAK] Price chart image sent to {phone}")
-                price_chart_sent = True
+                image_sent = True
 
-        if not price_chart_sent and bot_sent_link:
+        # Priority 2: price chart if bot sent a link (but not if already sent)
+        if bot_sent_link and not image_sent:
             price_images = get_price_chart_images(combined_text, message_text)
             if price_images:
                 send_product_images(phone, price_images)
-                print(f"[KITPAK] Price chart image sent with link to {phone}")
-                price_chart_sent = True
+                print(f"[KITPAK] Price chart sent with link to {phone}")
+                image_sent = True
 
-        if not price_chart_sent:
+        # Priority 3: product images only if no price chart was sent
+        if not image_sent:
             images = get_images_from_message(message_text)
             picture_requested = any(word in message_text.lower() for word in PICTURE_REQUEST_WORDS)
             if not images and picture_requested:
@@ -388,6 +391,7 @@ def webhook():
             if images:
                 send_product_images(phone, images)
                 print(f"[KITPAK] Product images sent to {phone}")
+                image_sent = True
 
     # ── Schedule 2-hour follow-up if website link was sent ──
     if bot_sent_link and not is_handoff(reply):
