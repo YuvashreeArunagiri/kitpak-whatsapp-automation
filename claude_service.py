@@ -178,8 +178,16 @@ Never type out prices. Never say "check the website for pricing."
 Prices are fixed and non-negotiable — add value instead of just saying no.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-LOCATION
+SHIPPING PARTNERS
 ━━━━━━━━━━━━━━━━━━━━━━━━━
+If customer asks about shipping, courier, or delivery partner:
+- Tamil Nadu orders → shipped via ST Courier
+- All other states across India → shipped via India Post
+- Free shipping on all orders
+- Orders placed before 6 PM are dispatched same day
+- Orders placed after 6 PM are dispatched next working day
+
+
 "Where are you from / which city" → "We are based in Tirupur, Tamil Nadu."
 "Share location / address" → "Here is our location: https://maps.google.com/maps?q=11.1196252%2C77.3304951&z=17&hl=en"
 
@@ -267,3 +275,4 @@ def classify_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
     except Exception as e:
         print(f"[KITPAK] Image classification error: {e}")
         return 'unknown'
+        
