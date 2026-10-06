@@ -270,8 +270,17 @@ def get_images_for_product(product_key: str) -> list:
 
 def get_product_key_from_message(message: str) -> str | None:
     """Match a customer message to a product image key.
-    Tries longer keywords first to avoid partial matches."""
+    Checks custom+colour combination first, then tries longer keywords."""
     message_lower = message.lower()
+    # Special case: detect custom + colour combination before generic keyword sort
+    # Prevents "courier cover" / "color cover" keywords from winning over custom intent
+    is_custom = any(w in message_lower for w in ['custom', 'printed', 'print', 'logo', 'branded', 'brand', 'design'])
+    is_colour_explicit = any(w in message_lower for w in ['colour', 'color', 'black', 'pink', 'purple'])
+    is_white_explicit = 'white' in message_lower
+    if is_custom and is_colour_explicit and not is_white_explicit:
+        return 'custom_printed_colour'
+    if is_custom and not is_colour_explicit and not is_white_explicit:
+        return 'custom_printed_white'
     # Sort by keyword length descending — longer/more specific matches first
     sorted_keywords = sorted(KEYWORD_MAP.keys(), key=len, reverse=True)
     for keyword in sorted_keywords:
