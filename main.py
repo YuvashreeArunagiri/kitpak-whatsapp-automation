@@ -173,9 +173,36 @@ def followup_scheduler():
 
         for phone in phones_to_followup:
             try:
-                send_whatsapp_message(phone,
-                    "Hi! Did you get a chance to check the link we shared? "
-                    "Let us know if you need any help placing your order on our website.")
+                # Build product-aware follow-up message
+                history = conversation_history.get(phone, [])
+                history_text = ' '.join([m.get('content', '') for m in history[-10:]]).lower()
+
+                product = 'covers'
+                if 'amazon' in history_text:
+                    product = 'Amazon courier covers'
+                elif 'flipkart' in history_text:
+                    product = 'Flipkart courier covers'
+                elif 'meesho' in history_text:
+                    product = 'Meesho courier covers'
+                elif 'honeycomb' in history_text:
+                    product = 'honeycomb packaging'
+                elif 'label' in history_text:
+                    product = 'shipping labels'
+                elif 'pink' in history_text:
+                    product = 'pink courier covers'
+                elif 'purple' in history_text:
+                    product = 'purple courier covers'
+                elif 'black' in history_text:
+                    product = 'black courier covers'
+                elif 'white' in history_text:
+                    product = 'white courier covers'
+
+                followup_msg = (
+                    f"Hi! Your {product} are ready to ship. "
+                    f"Have you placed your order? It takes less than 2 minutes on kitpak.in. "
+                    f"Order before 6 PM for same day dispatch!"
+                )
+                send_whatsapp_message(phone, followup_msg)
                 print(f"[KITPAK] Follow-up sent to {phone}")
             except Exception as e:
                 print(f"[KITPAK] Follow-up error for {phone}: {e}")
@@ -334,6 +361,7 @@ def webhook():
             return jsonify({'status': 'ok'}), 200
 
     # ── Get Claude reply ──
+    image_sent = False
     try:
         reply = get_claude_reply(conversation_history[phone])
     except Exception as e:
@@ -346,6 +374,7 @@ def webhook():
             if price_images:
                 send_product_images(phone, price_images)
                 print(f"[KITPAK] Price chart sent on fallback to {phone}")
+                image_sent = True
 
     conversation_history[phone].append({'role': 'assistant', 'content': reply})
 
@@ -356,7 +385,6 @@ def webhook():
     ]
     price_requested = is_price_request(message_text)
     bot_sent_link = 'kitpak.in' in reply.lower()
-    image_sent = False
 
     if not is_pure_greeting:
         history_text = ' '.join([m.get('content', '') for m in conversation_history[phone][-6:]]).lower()
