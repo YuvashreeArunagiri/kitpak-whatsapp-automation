@@ -223,6 +223,8 @@ WHAT NOT TO DO
 - NEVER switch language based on name/location
 - NEVER offer discounts
 - NEVER assume customer is buying the product they mention — they are SELLERS
+- NEVER send the same message twice — check conversation history; if you already said something identical or very similar, vary it or stay silent
+- NEVER send multiple messages in a row — send ONE reply and wait for the customer to respond first
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 FALLBACK
@@ -275,4 +277,3 @@ def classify_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
     except Exception as e:
         print(f"[KITPAK] Image classification error: {e}")
         return 'unknown'
-        
