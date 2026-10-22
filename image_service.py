@@ -301,24 +301,27 @@ def get_images_from_message(message: str) -> list:
 # ═══════════════════════════════════════════════════════════
 
 PRICE_CHART_IMAGES = {
-    "white_cover_100": ["white_cover_price_100.png"],
-    "white_cover_1000": ["white_cover_price_1000.png"],
-    "colour_cover_100": ["colour_cover_price_100.png"],
-    "colour_cover_1000": ["colour_cover_price_1000.png"],
-    "kraft_bag": ["kraft_bag_price.png"],
-    "packing_cover_100": ["packing_cover_price_100.png"],
-    "packing_cover_500": ["packing_cover_price_500.png"],
-    "honeycomb_roll": ["honeycomb_roll_price.png"],
-    "honeycomb_sleeve": ["honeycomb_sleeve_price.png"],
-    "thermal_label_roll": ["thermal_label_roll_price.png"],
-    "thermal_label_a4": ["thermal_label_a4_price.png"],
-    "custom_white_100": ["custom_white_price_100.png"],
-    "custom_white_1000": ["custom_white_price_1000.png"],
-    "custom_colour_100": ["custom_colour_price_100.png"],
-    "custom_colour_1000": ["custom_colour_price_1000.png"],
-    "meesho": ["meesho_price.png"],
-    "flipkart": ["flipkart_price.png"],
-    "amazon": ["amazon_price.png"],
+    "white_cover_100":          ["price_charts/white_cover_price_100.png"],
+    "white_cover_1000":         ["price_charts/white_cover_price_1000.png"],
+    "colour_cover_100":         ["price_charts/colour_cover_price_100.png"],
+    "colour_cover_1000":        ["price_charts/colour_cover_price_1000.png"],
+    "kraft_bag":                ["price_charts/kraft_bag_price.png"],
+    "kraft_courier":            ["price_charts/kraft_courier_price.png"],
+    "packing_cover_100":        ["price_charts/packing_cover_price_100.png"],
+    "packing_cover_500":        ["price_charts/packing_cover_price_500.png"],
+    "honeycomb_roll":           ["price_charts/honeycomb_roll_price.png"],
+    "honeycomb_sleeve":         ["price_charts/honeycomb_sleeve_price.png"],
+    "thermal_label_roll":       ["price_charts/thermal_label_roll_price.png"],
+    "thermal_label_a4":         ["price_charts/thermal_label_a4_price.png"],
+    "custom_white_100":         ["price_charts/custom_white_price_100.png"],
+    "custom_white_1000":        ["price_charts/custom_white_price_1000.png"],
+    "custom_colour_100":        ["price_charts/custom_colour_price_100.png"],
+    "custom_colour_1000":       ["price_charts/custom_colour_price_1000.png"],
+    "meesho":                   ["price_charts/meesho_price.png"],
+    "meesho_nontransparent":    ["price_charts/meesho_nontransparent_price.png"],
+    "flipkart":                 ["price_charts/flipkart_price.png"],
+    "amazon":                   ["price_charts/amazon_price.png"],
+    "stand_up_pouch":           ["price_charts/kraft_bag_price.png"],
 }
 
 # Words that indicate the customer wants pricing/rate info (not product photos)
@@ -340,8 +343,14 @@ def get_price_chart_key(message: str, current_message: str = None) -> str | None
     is_white_explicit = "white" in cur
     is_colour = any(w in cur for w in ["colour", "color", "black", "pink", "purple"]) and not is_white_explicit
 
+    # Stand-up pouch / kraft window pouch
+    if "stand up pouch" in message_lower or "standup pouch" in message_lower or "kraft window" in message_lower or "window pouch" in message_lower:
+        return "stand_up_pouch"
+
     # Platform covers — most specific first
     if "meesho" in message_lower:
+        if "non transparent" in message_lower or "non-transparent" in message_lower or "nontransparent" in message_lower:
+            return "meesho_nontransparent"
         return "meesho"
     if "flipkart" in message_lower:
         return "flipkart"
@@ -362,8 +371,10 @@ def get_price_chart_key(message: str, current_message: str = None) -> str | None
             return "thermal_label_a4"
         return "thermal_label_roll"
 
-    # Kraft/paper bag — only when explicitly mentioned
+    # Kraft/paper bag — distinguish stand-up pouch vs kraft courier envelope
     if "kraft" in message_lower or "paper bag" in message_lower or "paper courier" in message_lower:
+        if "courier" in message_lower or "mailer" in message_lower or "envelope" in message_lower:
+            return "kraft_courier"
         return "kraft_bag"
 
     # Packing/transparent covers — only when explicitly mentioned
